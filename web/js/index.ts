@@ -25,6 +25,6 @@ db.collection("white-cards").get().then((cardCollection) => {
 });
 
 db.collection("black-cards").get().then((cardCollection) => {
-  const cards = flattenCollection(cardCollection).map(card => ({...card, color: "white"}))
+  const cards = flattenCollection(cardCollection).map(card => ({...card, color: "black"}))
   elmApp.ports.loadCards.send(cards)
 });

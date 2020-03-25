@@ -8,12 +8,9 @@ module Main exposing (..)
 
 import Browser
 import Cards exposing (..)
-import Debug exposing (log)
 import Html as H
-import Html.Attributes exposing (..)
-import Html.Events exposing (onClick, onInput)
+import Html.Attributes as A
 import Json.Decode as D
-import Json.Encode as E
 import Ports exposing (..)
 import Result as R
 
@@ -41,7 +38,9 @@ type ErrType
 
 
 type alias Model =
-    { whiteCards : List Card, blackCards : List Card }
+    { whiteCards : List Card
+    , blackCards : List Card
+    }
 
 
 type AppState
@@ -130,5 +129,7 @@ renderApp model =
 renderModel : Model -> List (H.Html Msg)
 renderModel { whiteCards, blackCards } =
     [ H.h1 [] [ H.text "Cards Against Corona" ]
-    , H.div [] (List.concatMap renderCard whiteCards ++ List.concatMap renderCard blackCards)
+    , H.div
+        [ A.class "cards" ]
+        (renderCards (whiteCards ++ blackCards))
     ]
