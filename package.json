@@ -1,0 +1,33 @@
+{
+  "name": "cards-against-corona",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "parcel web/html/index.html",
+    "build": "parcel build web/html/index.html",
+    "upload": "./upload.sh",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChrisPenner/cards-against-corona.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ChrisPenner/cards-against-corona/issues"
+  },
+  "homepage": "https://github.com/ChrisPenner/cards-against-corona#readme",
+  "devDependencies": {
+    "elm-hot": "^1.1.4",
+    "node-elm-compiler": "^5.0.4",
+    "parcel": "^1.12.4",
+    "sass": "^1.26.3"
+  },
+  "dependencies": {
+    "@firebase/app": "^0.6.0",
+    "@firebase/auth": "^0.14.1",
+    "@firebase/firestore": "^1.12.2"
+  }
+}
