@@ -22,12 +22,12 @@ import Result as R
 -- MAIN
 
 
-main : Program () Model Msg
+main : Program () AppState Msg
 main =
-    Browser.document { init = init, update = update, view = view, subscriptions = subscriptions }
+    Browser.document { init = init, update = updateApp, view = view, subscriptions = subscriptions }
 
 
-subscriptions : Model -> Sub Msg
+subscriptions : AppState -> Sub Msg
 subscriptions _ =
     loadCards (decodeCards >> R.map LoadCards >> DecoderResult)
 
@@ -40,16 +40,20 @@ type ErrType
     = DecoderError D.Error
 
 
-type Model
-    = Error ErrType
-    | Model { whiteCards : List Card, blackCards : List Card }
+type alias Model =
+    { whiteCards : List Card, blackCards : List Card }
 
 
-init : flags -> ( Model, Cmd Msg )
+type AppState
+    = AppError ErrType
+    | AppModel Model
+
+
+init : flags -> ( AppState, Cmd Msg )
 init _ =
     let
         model =
-            Model
+            AppModel
                 { whiteCards = []
                 , blackCards = []
                 }
@@ -67,38 +71,64 @@ type Msg
     | LoadCards (List Card)
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
+updateApp msg model =
+    case model of
+        AppModel m ->
+            updateModel msg m
+
+        e ->
+            ( e, Cmd.none )
+
+
+updateModel : Msg -> Model -> ( AppState, Cmd Msg )
+updateModel msg model =
     case msg of
         Empty ->
-            ( model, Cmd.none )
+            ( AppModel model, Cmd.none )
 
         DecoderResult (R.Err err) ->
-            ( Error (DecoderError err), Cmd.none )
+            ( AppError (DecoderError err), Cmd.none )
 
         DecoderResult (R.Ok m) ->
-            update m model
+            updateModel m model
 
         LoadCards cards ->
             let
                 ( white, black ) =
                     List.partition (\x -> x.color == White) cards
             in
-            ( Model { whiteCards = white, blackCards = black }, Cmd.none )
+            ( AppModel
+                { whiteCards = model.whiteCards ++ white
+                , blackCards = model.blackCards ++ black
+                }
+            , Cmd.none
+            )
 
 
 
 -- VIEW
 
 
-view : Model -> Browser.Document Msg
+view : AppState -> Browser.Document Msg
 view model =
-    { title = "Hello world"
-    , body = render model
+    { title = "Cards Against Corona"
+    , body = renderApp model
     }
 
 
-render : Model -> List (H.Html Msg)
-render _ =
+renderApp : AppState -> List (H.Html Msg)
+renderApp model =
+    case model of
+        AppError (DecoderError err) ->
+            [ H.pre [] [ H.text (D.errorToString err) ] ]
+
+        AppModel m ->
+            renderModel m
+
+
+renderModel : Model -> List (H.Html Msg)
+renderModel { whiteCards, blackCards } =
     [ H.h1 [] [ H.text "Cards Against Corona" ]
+    , H.div [] (List.concatMap renderCard whiteCards ++ List.concatMap renderCard blackCards)
     ]

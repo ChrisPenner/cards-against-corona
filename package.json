@@ -23,7 +23,8 @@
     "elm-hot": "^1.1.4",
     "node-elm-compiler": "^5.0.4",
     "parcel": "^1.12.4",
-    "sass": "^1.26.3"
+    "sass": "^1.26.3",
+    "typescript": "^3.8.3"
   },
   "dependencies": {
     "@firebase/app": "^0.6.0",
