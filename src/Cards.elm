@@ -2,6 +2,7 @@ module Cards exposing (..)
 
 import Html as H
 import Html.Attributes as A
+import Json.Decode as D
 
 
 type Color
@@ -50,3 +51,30 @@ renderCard percentage { color, text } =
         , A.style "transform-origin" ("rotate(" ++ String.fromFloat rotation ++ "deg)")
         ]
         [ H.text text ]
+
+
+decodeCards : D.Value -> Result D.Error (List Card)
+decodeCards =
+    D.decodeValue (D.list cardDecoder)
+
+
+cardDecoder : D.Decoder Card
+cardDecoder =
+    D.map2 Card colorDecoder (D.field "text" D.string)
+
+
+colorDecoder : D.Decoder Color
+colorDecoder =
+    D.field "color" D.string
+        |> D.andThen
+            (\colorText ->
+                case colorText of
+                    "white" ->
+                        D.succeed White
+
+                    "black" ->
+                        D.succeed Black
+
+                    s ->
+                        D.fail ("Unknown color type: " ++ s)
+            )

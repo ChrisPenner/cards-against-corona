@@ -7,12 +7,17 @@ module Main exposing (..)
 --
 
 import Browser
+import Browser.Navigation as Navigation
 import Cards exposing (..)
+import Debug exposing (..)
+import Game
 import Html as H
 import Html.Attributes as A
 import Json.Decode as D
 import Ports exposing (..)
+import Random
 import Result as R
+import Url exposing (Url)
 
 
 
@@ -21,12 +26,42 @@ import Result as R
 
 main : Program () AppState Msg
 main =
-    Browser.document { init = init, update = updateApp, view = view, subscriptions = subscriptions }
+    Browser.application
+        { init = init
+        , view = view
+        , update = updateApp
+        , subscriptions = subscriptions
+        , onUrlRequest = onUrlRequest
+        , onUrlChange = onUrlChange
+        }
+
+
+onUrlRequest : Browser.UrlRequest -> Msg
+onUrlRequest r =
+    case r of
+        Browser.Internal _ ->
+            todo ""
+
+        Browser.External _ ->
+            todo ""
+
+
+onUrlChange : Url.Url -> Msg
+onUrlChange { path } =
+    case path of
+        "/" ->
+            Empty
+
+        _ ->
+            Empty
 
 
 subscriptions : AppState -> Sub Msg
 subscriptions _ =
-    loadCards (decodeCards >> R.map LoadCards >> DecoderResult)
+    Sub.batch
+        [ loadCards (decodeCards >> R.map LoadCards >> DecoderResult)
+        , joinGame (Game.decodeGame >> R.map JoinGame >> DecoderResult)
+        ]
 
 
 
@@ -40,6 +75,8 @@ type ErrType
 type alias Model =
     { whiteCards : List Card
     , blackCards : List Card
+    , game : Maybe Game.Game
+    , navigationKey : Navigation.Key
     }
 
 
@@ -48,16 +85,24 @@ type AppState
     | AppModel Model
 
 
-init : flags -> ( AppState, Cmd Msg )
-init _ =
-    let
-        model =
-            AppModel
-                { whiteCards = []
-                , blackCards = []
-                }
-    in
-    ( model, Cmd.none )
+init : flags -> Url -> Navigation.Key -> ( AppState, Cmd Msg )
+init _ { path } key =
+    case path of
+        "/" ->
+            ( emptyModel key, Random.generate StartGame Game.new )
+
+        _ ->
+            ( emptyModel key, Cmd.none )
+
+
+emptyModel : Navigation.Key -> AppState
+emptyModel k =
+    AppModel
+        { whiteCards = []
+        , blackCards = []
+        , game = Maybe.Nothing
+        , navigationKey = k
+        }
 
 
 
@@ -68,6 +113,8 @@ type Msg
     = Empty
     | DecoderResult (Result D.Error Msg)
     | LoadCards (List Card)
+    | StartGame Game.ID
+    | JoinGame Game.Game
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
@@ -98,11 +145,18 @@ updateModel msg model =
                     List.partition (\x -> x.color == White) cards
             in
             ( AppModel
-                { whiteCards = model.whiteCards ++ white
-                , blackCards = model.blackCards ++ black
+                { model
+                    | whiteCards = model.whiteCards ++ white
+                    , blackCards = model.blackCards ++ black
                 }
             , Cmd.none
             )
+
+        StartGame g ->
+            ( AppModel model, createGame g )
+
+        JoinGame { gameID } ->
+            ( AppModel model, Navigation.pushUrl model.navigationKey ("/" ++ gameID) )
 
 
 
