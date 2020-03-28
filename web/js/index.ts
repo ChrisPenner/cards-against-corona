@@ -62,6 +62,6 @@ elmApp.ports.createGame.subscribe(async function (gameID: string) {
     t.set(gameRef, g);
     return g;
   });
-  elmApp.ports.joinGame.send(game);
+  elmApp.ports.joinGame.send(game.gameID);
   console.log("game", game);
 });

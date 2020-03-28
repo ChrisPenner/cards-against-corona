@@ -14,10 +14,12 @@ import Game
 import Html as H
 import Html.Attributes as A
 import Json.Decode as D
+import Loading exposing (..)
 import Ports exposing (..)
 import Random
 import Result as R
 import Url exposing (Url)
+import Utils exposing (..)
 
 
 
@@ -59,8 +61,8 @@ onUrlChange { path } =
 subscriptions : AppState -> Sub Msg
 subscriptions _ =
     Sub.batch
-        [ loadCards (decodeCards >> R.map LoadCards >> DecoderResult)
-        , joinGame (Game.decodeGame >> R.map JoinGame >> DecoderResult)
+        [ Sub.map GameMsg Game.subscriptions
+        , Game.joinGame JoinGame
         ]
 
 
@@ -72,37 +74,29 @@ type ErrType
     = DecoderError D.Error
 
 
-type alias Model =
-    { whiteCards : List Card
-    , blackCards : List Card
-    , game : Maybe Game.Game
-    , navigationKey : Navigation.Key
+type Page
+    = LandingPage
+    | GamePage Game.Game
+
+
+type alias AppState =
+    { globals : Globals
+    , page : Page
     }
 
 
-type AppState
-    = AppError ErrType
-    | AppModel Model
+type alias Globals =
+    { navigationKey : Navigation.Key }
 
 
 init : flags -> Url -> Navigation.Key -> ( AppState, Cmd Msg )
 init _ { path } key =
     case path of
         "/" ->
-            ( emptyModel key, Random.generate StartGame Game.new )
+            ( { globals = { navigationKey = key }, page = LandingPage }, Random.generate StartGame Game.new )
 
-        _ ->
-            ( emptyModel key, Cmd.none )
-
-
-emptyModel : Navigation.Key -> AppState
-emptyModel k =
-    AppModel
-        { whiteCards = []
-        , blackCards = []
-        , game = Maybe.Nothing
-        , navigationKey = k
-        }
+        pth ->
+            ( { globals = { navigationKey = key }, page = LandingPage }, Game.createGame (String.dropLeft 1 pth) )
 
 
 
@@ -111,55 +105,53 @@ emptyModel k =
 
 type Msg
     = Empty
-    | DecoderResult (Result D.Error Msg)
-    | LoadCards (List Card)
     | StartGame Game.ID
-    | JoinGame Game.Game
+    | JoinGame Game.ID
+    | GameMsg Game.Msg
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
-updateApp msg model =
-    case model of
-        AppModel m ->
-            updateModel msg m
+updateApp msg ({ page } as model) =
+    (case ( page, msg ) of
+        ( _, Empty ) ->
+            ( page, Cmd.none )
 
-        e ->
-            ( e, Cmd.none )
+        ( pg, StartGame id ) ->
+            ( pg, Game.createGame id )
 
-
-updateModel : Msg -> Model -> ( AppState, Cmd Msg )
-updateModel msg model =
-    case msg of
-        Empty ->
-            ( AppModel model, Cmd.none )
-
-        DecoderResult (R.Err err) ->
-            ( AppError (DecoderError err), Cmd.none )
-
-        DecoderResult (R.Ok m) ->
-            updateModel m model
-
-        LoadCards cards ->
-            let
-                ( white, black ) =
-                    List.partition (\x -> x.color == White) cards
-            in
-            ( AppModel
-                { model
-                    | whiteCards = model.whiteCards ++ white
-                    , blackCards = model.blackCards ++ black
+        ( _, JoinGame id ) ->
+            ( GamePage
+                { gameID = id
+                , whiteCards = Loading
+                , blackCards = Loading
+                , errors = []
                 }
             , Cmd.none
             )
 
-        StartGame g ->
-            ( AppModel model, createGame g )
+        ( LandingPage, _ ) ->
+            ( page, Cmd.none )
 
-        JoinGame { gameID } ->
-            ( AppModel model, Navigation.pushUrl model.navigationKey ("/" ++ gameID) )
+        ( GamePage g, GameMsg m ) ->
+            case Game.update m g of
+                ( newGame, cmd ) ->
+                    ( GamePage newGame, cmd )
+    )
+        |> Tuple.mapFirst (\p -> { model | page = p })
 
 
 
+-- updateModel : Msg -> AppState -> ( AppState, Cmd Msg )
+-- updateModel msg model =
+--     case msg of
+--         Empty ->
+--             ( model, Cmd.none )
+--         StartGame g ->
+--             ( model, Game.createGame g )
+--         JoinGame { gameID } ->
+--             ( model, Navigation.pushUrl model.globals.navigationKey ("/" ++ gameID) )
+--         GameMsg m ->
+--             ( {model | , Navigation.pushUrl model.globals.navigationKey ("/" ++ gameID) )
 -- VIEW
 
 
@@ -171,19 +163,17 @@ view model =
 
 
 renderApp : AppState -> List (H.Html Msg)
-renderApp model =
-    case model of
-        AppError (DecoderError err) ->
-            [ H.pre [] [ H.text (D.errorToString err) ] ]
+renderApp { page } =
+    case page of
+        LandingPage ->
+            renderLandingPage
 
-        AppModel m ->
-            renderModel m
+        GamePage g ->
+            Game.render g
 
 
-renderModel : Model -> List (H.Html Msg)
-renderModel { whiteCards, blackCards } =
+renderLandingPage : List (H.Html msg)
+renderLandingPage =
     [ H.h1 [] [ H.text "Cards Against Corona" ]
-    , H.div
-        [ A.class "cards" ]
-        (renderCards (whiteCards ++ blackCards))
+    , H.text "Starting New Game..."
     ]
