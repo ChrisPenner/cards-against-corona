@@ -1,6 +1,7 @@
 import { Elm } from '../../src/Main.elm'
 import firebase from '@firebase/app'
-import { QuerySnapshot, DocumentSnapshot, DocumentReference, Transaction } from '@firebase/firestore-types'
+import { UserCredential } from '@firebase/auth-types'
+import { QuerySnapshot, DocumentSnapshot, DocumentReference, Transaction} from '@firebase/firestore-types'
 
 // Imported for side effects
 import '@firebase/firestore'
@@ -30,7 +31,8 @@ firebase.auth().onAuthStateChanged(function(user) {
   }
 });
 
-firebase.auth().signInAnonymously().catch(function(error) {
+firebase.auth().signInAnonymously().then((creds: UserCredential) => {
+}).catch(function(error) {
   console.error(error)
 });
 
@@ -38,7 +40,7 @@ firebase.auth().signInAnonymously().catch(function(error) {
 // Listen From Elm
 
 elmApp.ports.createGame.subscribe(async function (gameID: string) {
-  const g = {gameID};
+  const g = {gameID, players: {}};
   const gameRef: DocumentReference = db.collection('games').doc(gameID);
   const game = await db.runTransaction(async (t: Transaction) => {
     const gameDoc: DocumentSnapshot = await t.get(gameRef);

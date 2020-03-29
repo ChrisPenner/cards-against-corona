@@ -68,7 +68,7 @@ render { whiteCards, blackCards } =
         [ A.class "cards" ]
         (case zipLoading List.append whiteCards blackCards of
             Loading ->
-                []
+                [ H.text "loading..." ]
 
             Loaded cards ->
                 renderCards cards

@@ -20,6 +20,8 @@
   },
   "homepage": "https://github.com/ChrisPenner/cards-against-corona#readme",
   "devDependencies": {
+    "@elm-tooling/elm-language-server": "^1.6.3",
+    "elm-format": "^0.8.3",
     "elm-hot": "^1.1.4",
     "node-elm-compiler": "^5.0.4",
     "parcel": "^1.12.4",

@@ -170,5 +170,9 @@ renderApp { page } =
 renderLandingPage : List (H.Html msg)
 renderLandingPage =
     [ H.h1 [] [ H.text "Cards Against Corona" ]
-    , H.text "Starting New Game..."
+    , H.text "Joining  Game..."
     ]
+
+type alias User =
+    { userID: String
+    }
