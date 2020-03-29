@@ -93,7 +93,7 @@ init : flags -> Url -> Navigation.Key -> ( AppState, Cmd Msg )
 init _ { path } key =
     case path of
         "/" ->
-            ( { globals = { navigationKey = key }, page = LandingPage }, Random.generate StartGame Game.new )
+            ( { globals = { navigationKey = key }, page = LandingPage }, Random.generate StartGame Game.newGameID )
 
         pth ->
             ( { globals = { navigationKey = key }, page = LandingPage }, Game.createGame (String.dropLeft 1 pth) )
@@ -111,7 +111,7 @@ type Msg
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
-updateApp msg ({ page } as model) =
+updateApp msg ({ page, globals } as model) =
     (case ( page, msg ) of
         ( _, Empty ) ->
             ( page, Cmd.none )
@@ -119,15 +119,10 @@ updateApp msg ({ page } as model) =
         ( pg, StartGame id ) ->
             ( pg, Game.createGame id )
 
-        ( _, JoinGame id ) ->
-            ( GamePage
-                { gameID = id
-                , whiteCards = Loading
-                , blackCards = Loading
-                , errors = []
-                }
-            , Cmd.none
-            )
+        ( _, JoinGame gameID ) ->
+            case Game.load gameID of
+                ( g, cmds ) ->
+                    ( GamePage g, Cmd.batch [ cmds, Navigation.pushUrl globals.navigationKey ("/" ++ gameID) ] )
 
         ( LandingPage, _ ) ->
             ( page, Cmd.none )

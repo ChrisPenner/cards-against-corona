@@ -1,6 +1,7 @@
 port module Game exposing (..)
 
 import Cards exposing (..)
+import Debug exposing (..)
 import Html as H
 import Html.Attributes as A
 import Json.Decode as D
@@ -14,8 +15,8 @@ type alias ID =
     String
 
 
-new : Random.Generator ID
-new =
+newGameID : Random.Generator ID
+newGameID =
     Random.map Uuid.toString Uuid.uuidGenerator
 
 
@@ -32,14 +33,22 @@ type Msg
     | GameError String
 
 
-init : Cmd Msg
-init =
-    Cmd.batch
-        []
-
-
 
 -- decodeGame
+
+
+load : ID -> ( Game, Cmd msg )
+load id =
+    ( new id, Cmd.batch [ requestCards () ] )
+
+
+new : ID -> Game
+new id =
+    { gameID = id
+    , whiteCards = Loading
+    , blackCards = Loading
+    , errors = []
+    }
 
 
 decodeGame : D.Value -> Result D.Error Game
@@ -54,18 +63,17 @@ gameDecoder =
 
 render : Game -> List (H.Html msg)
 render { whiteCards, blackCards } =
-    todo "Load cards on loading game"
-        [ H.h1 [] [ H.text "Cards Against Corona" ]
-        , H.div
-            [ A.class "cards" ]
-            (case zipLoading List.append whiteCards blackCards of
-                Loading ->
-                    []
+    [ H.h1 [] [ H.text "Cards Against Corona" ]
+    , H.div
+        [ A.class "cards" ]
+        (case zipLoading List.append whiteCards blackCards of
+            Loading ->
+                []
 
-                Loaded cards ->
-                    renderCards cards
-            )
-        ]
+            Loaded cards ->
+                renderCards cards
+        )
+    ]
 
 
 update : Msg -> Game -> ( Game, Cmd msg )
@@ -102,7 +110,18 @@ subscriptions =
         ]
 
 
+
+-- Outgoing
+
+
 port createGame : ID -> Cmd msg
+
+
+port requestCards : () -> Cmd msg
+
+
+
+-- Incoming
 
 
 port loadCards : (D.Value -> msg) -> Sub msg

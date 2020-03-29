@@ -22,16 +22,6 @@ function flattenCollection<T>(snapshot: QuerySnapshot<T>): T[] {
   return snapshot.docs.map(doc => doc.data());
 }
 
-db.collection("white-cards").get().then((cardCollection) => {
-  const cards = flattenCollection(cardCollection).map(card => ({...card, color: "white"}))
-  elmApp.ports.loadCards.send(cards)
-});
-
-db.collection("black-cards").get().then((cardCollection) => {
-  const cards = flattenCollection(cardCollection).map(card => ({...card, color: "black"}))
-  elmApp.ports.loadCards.send(cards)
-});
-
 firebase.auth().onAuthStateChanged(function(user) {
   if (user) {
     console.log(user)
@@ -47,10 +37,6 @@ firebase.auth().signInAnonymously().catch(function(error) {
 
 // Listen From Elm
 
-// interface Game {
-//   gameID: string;
-// }
-
 elmApp.ports.createGame.subscribe(async function (gameID: string) {
   const g = {gameID};
   const gameRef: DocumentReference = db.collection('games').doc(gameID);
@@ -65,3 +51,16 @@ elmApp.ports.createGame.subscribe(async function (gameID: string) {
   elmApp.ports.joinGame.send(game.gameID);
   console.log("game", game);
 });
+
+
+elmApp.ports.requestCards.subscribe(async function () {
+  db.collection("white-cards").get().then((cardCollection) => {
+    const cards = flattenCollection(cardCollection).map(card => ({...card, color: "white"}))
+    elmApp.ports.loadCards.send(cards)
+  });
+
+  db.collection("black-cards").get().then((cardCollection) => {
+    const cards = flattenCollection(cardCollection).map(card => ({...card, color: "black"}))
+    elmApp.ports.loadCards.send(cards)
+  });
+};
