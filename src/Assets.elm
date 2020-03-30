@@ -2,16 +2,18 @@ port module Assets exposing (..)
 
 import Cards exposing (Card)
 import Json.Decode as D
+import List.Nonempty exposing (Nonempty)
+import Utils
 
 
 type alias Assets =
-    { whiteCards : List Card
-    , blackCards : List Card
+    { whiteCards : Nonempty Card
+    , blackCards : Nonempty Card
     }
 
 
 type Msg
-    = LoadedCards (List Card)
+    = LoadedAssets Assets
     | Failure String
 
 
@@ -20,9 +22,9 @@ subscriptions =
     Sub.batch
         [ loadedCards
             (\r ->
-                case Cards.decode r of
-                    Ok cards ->
-                        LoadedCards cards
+                case decode r of
+                    Ok assets ->
+                        LoadedAssets assets
 
                     Err e ->
                         Failure (D.errorToString e)
@@ -31,6 +33,15 @@ subscriptions =
 
 
 port loadedCards : (D.Value -> msg) -> Sub msg
+
+
+decode : D.Value -> Result D.Error Assets
+decode =
+    D.decodeValue
+        (D.map2 Assets
+            (D.field "whiteCards" <| Utils.decodeNonempty <| Cards.decode Cards.White)
+            (D.field "blackCards" <| Utils.decodeNonempty <| Cards.decode Cards.Black)
+        )
 
 
 

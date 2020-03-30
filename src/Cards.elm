@@ -3,6 +3,8 @@ module Cards exposing (..)
 import Html as H
 import Html.Attributes as A
 import Json.Decode as D
+import Json.Encode as E
+import List.Nonempty as Nonempty exposing (Nonempty)
 
 
 type Color
@@ -26,13 +28,14 @@ colorClass c =
             "black"
 
 
-renderCards : List Card -> List (H.Html msg)
+renderCards : Nonempty Card -> H.Html msg
 renderCards cards =
     let
         len =
-            List.length cards
+            Nonempty.length cards
     in
-    List.indexedMap (\i card -> renderCard (toFloat i / toFloat (len - 1)) card) cards
+    H.div []
+        (Nonempty.toList <| Nonempty.indexedMap (\i card -> renderCard (toFloat i / toFloat (len - 1)) card) cards)
 
 
 renderCard : Float -> Card -> H.Html msg
@@ -53,14 +56,25 @@ renderCard percentage { color, text } =
         [ H.text text ]
 
 
-decode : D.Value -> Result D.Error (List Card)
-decode =
-    D.decodeValue (D.list cardDecoder)
+decode : Color -> D.Decoder Card
+decode color =
+    D.map2 Card (D.succeed color) (D.field "text" D.string)
 
 
-cardDecoder : D.Decoder Card
-cardDecoder =
-    D.map2 Card colorDecoder (D.field "text" D.string)
+encode : Card -> E.Value
+encode { color, text } =
+    E.object [ ( "text", E.string text ), ( "color", encodeColor color ) ]
+
+
+encodeColor : Color -> E.Value
+encodeColor c =
+    E.string <|
+        case c of
+            White ->
+                "white"
+
+            Black ->
+                "black"
 
 
 colorDecoder : D.Decoder Color

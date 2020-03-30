@@ -23,10 +23,23 @@ interface Player {
   playerID: string;
 }
 
+interface Card {
+  text: string;
+}
+
+interface Assets {
+  whiteCards: Card[];
+  blackCards: Card[];
+}
+
+
+
+
 interface Game {
   gameID: string;
   players: {[playerID: string]: Player};
   turn: string;
+  blackCard: Card;
 }
 
 interface Flags {
@@ -53,7 +66,7 @@ async function init() {
     const game = await db.runTransaction<Game>(async (t: Transaction) => {
       const gameDoc: DocumentSnapshot = await t.get(gameRef);
       if (gameDoc.exists) {
-        return gameDoc.data();
+        return gameDoc.data() as Game;
       }
       t.set(gameRef, newGame);
       return newGame;
@@ -63,11 +76,11 @@ async function init() {
   });
 
 
-  const [whiteCards, blackCards] = await Promise.all([
-      db.collection("white-cards").get().then((cardCollection) => flattenCollection(cardCollection).map(card => ({...card, color: "white"}))),
-      db.collection("black-cards").get().then((cardCollection) => flattenCollection(cardCollection).map(card => ({...card, color: "black"}))),
-  ]);
-  elmApp.ports.loadedCards.send([...whiteCards, ...blackCards])
+  const [whiteCards, blackCards] : Card[][] = await Promise.all([
+      db.collection("white-cards").get().then(flattenCollection),
+      db.collection("black-cards").get().then(flattenCollection),
+  ] as Promise<Card[]>[]);
+  elmApp.ports.loadedCards.send({whiteCards, blackCards} as Assets);
 };
 init();
 

@@ -11,7 +11,6 @@ import Browser
 import Browser.Navigation as Navigation
 import Cards exposing (..)
 import Debug exposing (..)
-import Dict
 import Game exposing (Game)
 import Html as H exposing (Html)
 import Json.Decode as D
@@ -86,13 +85,14 @@ type Page
 type alias AppState =
     { user : Player
     , navigationKey : Navigation.Key
-    , assets : Loading Assets
+    , assets : Assets
     , page : Page
     }
 
 
 type alias Flags =
     { user : Player
+    , assets : Assets
     }
 
 
@@ -105,7 +105,7 @@ init { user } { path } key =
               , assets = Loading
               , page = LandingPage
               }
-            , Random.generate StartGame Game.newGameID
+            , Random.generate identity (Random.map2 StartGame Game.newGameID Random.independentSeed)
             )
 
         pth ->
@@ -124,7 +124,7 @@ init { user } { path } key =
 
 type Msg
     = Empty
-    | StartGame Game.ID
+    | StartGame Game.ID Random.Seed
     | JoinGame Game
     | AssetMsg Assets.Msg
     | EpicFailure String

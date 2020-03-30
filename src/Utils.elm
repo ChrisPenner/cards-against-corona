@@ -1,11 +1,18 @@
 module Utils exposing (..)
 
+import Json.Decode as D
+import List.Nonempty exposing (Nonempty(..))
 
-wrapUpdate : (msg -> state -> ( state, Cmd msg )) -> Maybe msg -> state -> ( state, Cmd (Maybe msg) )
-wrapUpdate updater msg s =
-    case msg of
-        Just m ->
-            Tuple.mapSecond (Cmd.map Just) (updater m s)
 
-        Nothing ->
-            ( s, Cmd.none )
+decodeNonempty : D.Decoder a -> D.Decoder (Nonempty a)
+decodeNonempty decodeVal =
+    D.list decodeVal
+        |> D.andThen
+            (\xs ->
+                case xs of
+                    x :: rest ->
+                        D.succeed (Nonempty x rest)
+
+                    _ ->
+                        D.fail "expected non empty list"
+            )
