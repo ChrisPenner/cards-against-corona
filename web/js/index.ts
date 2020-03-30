@@ -15,54 +15,59 @@ const fbApp = firebase.initializeApp({
 
 const db = fbApp.firestore()
 
-const elmApp = Elm.Main.init({
-    node: document.getElementById('elm')
-});
-
 function flattenCollection<T>(snapshot: QuerySnapshot<T>): T[] {
   return snapshot.docs.map(doc => doc.data());
 }
 
-firebase.auth().onAuthStateChanged(function(user) {
+interface Player {
+  playerID: string;
+}
+
+interface Game {
+  gameID: string;
+  players: {[playerID: string]: Player};
+  turn: string;
+}
+
+interface Flags {
+  user : Player;
+}
+
+async function init() {
+  const {user} : UserCredential = await firebase.auth().signInAnonymously();
   if (user) {
     console.log(user)
   } else {
     console.error("signed out")
   }
-});
 
-firebase.auth().signInAnonymously().then((creds: UserCredential) => {
-}).catch(function(error) {
-  console.error(error)
-});
-
-
-// Listen From Elm
-
-elmApp.ports.createGame.subscribe(async function (gameID: string) {
-  const g = {gameID, players: {}};
-  const gameRef: DocumentReference = db.collection('games').doc(gameID);
-  const game = await db.runTransaction(async (t: Transaction) => {
-    const gameDoc: DocumentSnapshot = await t.get(gameRef);
-    if (gameDoc.exists) {
-      return gameDoc.data();
-    }
-    t.set(gameRef, g);
-    return g;
-  });
-  elmApp.ports.joinGame.send(game.gameID);
-  console.log("game", game);
-});
-
-
-elmApp.ports.requestCards.subscribe(async function () {
-  db.collection("white-cards").get().then((cardCollection) => {
-    const cards = flattenCollection(cardCollection).map(card => ({...card, color: "white"}))
-    elmApp.ports.loadCards.send(cards)
+  const elmApp = Elm.Main.init({
+    node: document.getElementById('elm'),
+    flags: {user: {playerID: user.uid}} as Flags,
   });
 
-  db.collection("black-cards").get().then((cardCollection) => {
-    const cards = flattenCollection(cardCollection).map(card => ({...card, color: "black"}))
-    elmApp.ports.loadCards.send(cards)
+
+  // Listen From Elm
+  elmApp.ports.createOrJoinGame.subscribe(async function (newGame : Game) {
+    const gameRef: DocumentReference = db.collection('games').doc(newGame.gameID);
+    const game = await db.runTransaction<Game>(async (t: Transaction) => {
+      const gameDoc: DocumentSnapshot = await t.get(gameRef);
+      if (gameDoc.exists) {
+        return gameDoc.data();
+      }
+      t.set(gameRef, newGame);
+      return newGame;
+    });
+    elmApp.ports.joinedGame.send(game);
+    console.log("game", game);
   });
+
+
+  const [whiteCards, blackCards] = await Promise.all([
+      db.collection("white-cards").get().then((cardCollection) => flattenCollection(cardCollection).map(card => ({...card, color: "white"}))),
+      db.collection("black-cards").get().then((cardCollection) => flattenCollection(cardCollection).map(card => ({...card, color: "black"}))),
+  ]);
+  elmApp.ports.loadedCards.send([...whiteCards, ...blackCards])
 };
+init();
+

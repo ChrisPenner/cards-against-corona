@@ -1,13 +1,16 @@
 port module Game exposing (..)
 
+import Assets exposing (Assets)
 import Cards exposing (..)
 import Debug exposing (..)
+import Dict exposing (Dict)
 import Html as H
 import Html.Attributes as A
 import Json.Decode as D
+import Json.Encode as E
 import Loading exposing (..)
+import Player exposing (Player)
 import Random
-import Result as R
 import Uuid
 
 
@@ -22,91 +25,52 @@ newGameID =
 
 type alias Game =
     { gameID : String
-    , whiteCards : Loading (List Card)
-    , blackCards : Loading (List Card)
-    , errors : List String
+    , players : Dict Player.ID Player
+    , turn : Player.ID
     }
-
-
-type Msg
-    = LoadCards (List Card)
-    | GameError String
 
 
 
 -- decodeGame
 
 
-load : ID -> ( Game, Cmd msg )
-load id =
-    ( new id, Cmd.batch [ requestCards () ] )
+load : Game -> ( Game, Cmd msg )
+load game =
+    ( game, Cmd.batch [ requestCards () ] )
 
 
-new : ID -> Game
-new id =
-    { gameID = id
-    , whiteCards = Loading
-    , blackCards = Loading
-    , errors = []
+new : Player -> ID -> Game
+new user gameID =
+    { gameID = gameID
+    , players = Dict.singleton user.playerID user
+    , turn = user.playerID
     }
 
 
-decodeGame : D.Value -> Result D.Error Game
-decodeGame =
+decode : D.Value -> Result D.Error Game
+decode =
     D.decodeValue gameDecoder
 
 
 gameDecoder : D.Decoder Game
 gameDecoder =
-    D.map4 Game (D.field "gameID" D.string) (D.succeed Loading) (D.succeed Loading) (D.succeed [])
+    D.map3 Game (D.field "gameID" D.string) (D.succeed Dict.empty) (D.field "turn" D.string)
 
 
-render : Game -> List (H.Html msg)
-render { whiteCards, blackCards } =
-    [ H.h1 [] [ H.text "Cards Against Corona" ]
-    , H.div
-        [ A.class "cards" ]
-        (case zipLoading List.append whiteCards blackCards of
-            Loading ->
-                [ H.text "loading..." ]
+render : Player -> Assets -> Game -> H.Html msg
+render { playerID } { whiteCards, blackCards } { turn } =
+    H.div []
+        [ H.h1 [] [ H.text "Cards Against Corona" ]
+        , H.h2 []
+            (if playerID == turn then
+                [ H.text "Your turn!" ]
 
-            Loaded cards ->
-                renderCards cards
-        )
-    ]
-
-
-update : Msg -> Game -> ( Game, Cmd msg )
-update msg g =
-    case msg of
-        LoadCards cards ->
-            let
-                ( white, black ) =
-                    List.partition (\x -> x.color == White) cards
-            in
-            ( { g
-                | whiteCards = Loaded (Loading.withDefault [] g.whiteCards ++ white)
-                , blackCards = Loaded (Loading.withDefault [] g.blackCards ++ black)
-              }
-            , Cmd.none
+             else
+                [ H.text "Waiting for your friend to play" ]
             )
-
-        GameError e ->
-            ( { g | errors = e :: g.errors }, Cmd.none )
-
-
-subscriptions : Sub Msg
-subscriptions =
-    Sub.batch
-        [ loadCards
-            (\r ->
-                case decodeCards r of
-                    Ok cards ->
-                        LoadCards cards
-
-                    Err e ->
-                        GameError (D.errorToString e)
-            )
+        , H.div
+            [ A.class "cards" ]
+            (renderCards (whiteCards ++ blackCards))
         ]
 
 
@@ -114,7 +78,17 @@ subscriptions =
 -- Outgoing
 
 
-port createGame : ID -> Cmd msg
+createOrJoinGameT : Game -> Cmd msg
+createOrJoinGameT { gameID, players, turn } =
+    E.object
+        [ ( "gameID", E.string gameID )
+        , ( "players", E.dict identity Player.encode players )
+        , ( "turn", E.string turn )
+        ]
+        |> createOrJoinGame
+
+
+port createOrJoinGame : E.Value -> Cmd msg
 
 
 port requestCards : () -> Cmd msg
@@ -124,7 +98,4 @@ port requestCards : () -> Cmd msg
 -- Incoming
 
 
-port loadCards : (D.Value -> msg) -> Sub msg
-
-
-port joinGame : (ID -> msg) -> Sub msg
+port joinedGame : (D.Value -> msg) -> Sub msg

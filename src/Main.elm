@@ -6,18 +6,21 @@ module Main exposing (..)
 --   https://guide.elm-lang.org/architecture/buttons.html
 --
 
+import Assets exposing (Assets)
 import Browser
 import Browser.Navigation as Navigation
 import Cards exposing (..)
 import Debug exposing (..)
-import Game
-import Html as H
-import Html.Attributes as A
+import Dict
+import Game exposing (Game)
+import Html as H exposing (Html)
 import Json.Decode as D
 import Loading exposing (..)
+import Player exposing (Player)
 import Ports exposing (..)
 import Random
 import Result as R
+import Result.Extra as R
 import Url exposing (Url)
 import Utils exposing (..)
 
@@ -26,7 +29,7 @@ import Utils exposing (..)
 -- MAIN
 
 
-main : Program () AppState Msg
+main : Program Flags AppState Msg
 main =
     Browser.application
         { init = init
@@ -61,8 +64,8 @@ onUrlChange { path } =
 subscriptions : AppState -> Sub Msg
 subscriptions _ =
     Sub.batch
-        [ Sub.map GameMsg Game.subscriptions
-        , Game.joinGame JoinGame
+        [ Sub.map AssetMsg Assets.subscriptions
+        , Game.joinedGame (Game.decode >> R.unpack (D.errorToString >> EpicFailure) JoinGame)
         ]
 
 
@@ -77,26 +80,42 @@ type ErrType
 type Page
     = LandingPage
     | GamePage Game.Game
+    | FailurePage String
 
 
 type alias AppState =
-    { globals : Globals
+    { user : Player
+    , navigationKey : Navigation.Key
+    , assets : Loading Assets
     , page : Page
     }
 
 
-type alias Globals =
-    { navigationKey : Navigation.Key }
+type alias Flags =
+    { user : Player
+    }
 
 
-init : flags -> Url -> Navigation.Key -> ( AppState, Cmd Msg )
-init _ { path } key =
+init : Flags -> Url -> Navigation.Key -> ( AppState, Cmd Msg )
+init { user } { path } key =
     case path of
         "/" ->
-            ( { globals = { navigationKey = key }, page = LandingPage }, Random.generate StartGame Game.newGameID )
+            ( { navigationKey = key
+              , user = user
+              , assets = Loading
+              , page = LandingPage
+              }
+            , Random.generate StartGame Game.newGameID
+            )
 
         pth ->
-            ( { globals = { navigationKey = key }, page = LandingPage }, Game.createGame (String.dropLeft 1 pth) )
+            ( { navigationKey = key
+              , user = user
+              , assets = Loading
+              , page = LandingPage
+              }
+            , Game.createOrJoinGameT (Game.new user (String.dropLeft 1 pth))
+            )
 
 
 
@@ -106,33 +125,41 @@ init _ { path } key =
 type Msg
     = Empty
     | StartGame Game.ID
-    | JoinGame Game.ID
-    | GameMsg Game.Msg
+    | JoinGame Game
+    | AssetMsg Assets.Msg
+    | EpicFailure String
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
-updateApp msg ({ page, globals } as model) =
-    (case ( page, msg ) of
-        ( _, Empty ) ->
-            ( page, Cmd.none )
+updateApp msg model =
+    case msg of
+        Empty ->
+            ( model, Cmd.none )
 
-        ( pg, StartGame id ) ->
-            ( pg, Game.createGame id )
+        AssetMsg (Assets.Failure err) ->
+            ( { model | page = FailurePage err }, Cmd.none )
 
-        ( _, JoinGame gameID ) ->
-            case Game.load gameID of
+        AssetMsg (Assets.LoadedCards cards) ->
+            let
+                ( white, black ) =
+                    List.partition (\x -> x.color == White) cards
+            in
+            ( { model | assets = Loaded { whiteCards = white, blackCards = black } }, Cmd.none )
+
+        EpicFailure err ->
+            ( { model | page = FailurePage err }, Cmd.none )
+
+        -- ( FailurePage err, _ ) ->
+        --     ( FailurePage err, Cmd.none )
+        StartGame gameID ->
+            ( model
+            , Game.createOrJoinGameT (Game.new model.user gameID)
+            )
+
+        JoinGame game ->
+            case Game.load game of
                 ( g, cmds ) ->
-                    ( GamePage g, Cmd.batch [ cmds, Navigation.pushUrl globals.navigationKey ("/" ++ gameID) ] )
-
-        ( LandingPage, _ ) ->
-            ( page, Cmd.none )
-
-        ( GamePage g, GameMsg m ) ->
-            case Game.update m g of
-                ( newGame, cmd ) ->
-                    ( GamePage newGame, cmd )
-    )
-        |> Tuple.mapFirst (\p -> { model | page = p })
+                    ( { model | page = GamePage g }, Cmd.batch [ cmds, Navigation.pushUrl model.navigationKey ("/" ++ game.gameID) ] )
 
 
 
@@ -153,26 +180,46 @@ updateApp msg ({ page, globals } as model) =
 view : AppState -> Browser.Document Msg
 view model =
     { title = "Cards Against Corona"
-    , body = renderApp model
+    , body = [ renderApp model ]
     }
 
 
-renderApp : AppState -> List (H.Html Msg)
-renderApp { page } =
+renderApp : AppState -> H.Html Msg
+renderApp { assets, page, user } =
     case page of
         LandingPage ->
             renderLandingPage
 
         GamePage g ->
-            Game.render g
+            case assets of
+                Loading ->
+                    renderLoadingPage
+
+                Loaded loadedAssets ->
+                    Game.render user loadedAssets g
+
+        FailurePage err ->
+            renderFailurePage err
 
 
-renderLandingPage : List (H.Html msg)
+renderLandingPage : H.Html msg
 renderLandingPage =
-    [ H.h1 [] [ H.text "Cards Against Corona" ]
-    , H.text "Joining  Game..."
-    ]
+    H.div
+        []
+        [ H.h1 [] [ H.text "Cards Against Corona" ]
+        , H.text "Joining  Game..."
+        ]
 
-type alias User =
-    { userID: String
-    }
+
+renderLoadingPage : H.Html msg
+renderLoadingPage =
+    H.div
+        []
+        [ H.h1 [] [ H.text "Cards Against Corona" ]
+        , H.text "Loading  Game..."
+        ]
+
+
+renderFailurePage : String -> Html msg
+renderFailurePage err =
+    H.pre [] [ H.text err ]

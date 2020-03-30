@@ -53,8 +53,8 @@ renderCard percentage { color, text } =
         [ H.text text ]
 
 
-decodeCards : D.Value -> Result D.Error (List Card)
-decodeCards =
+decode : D.Value -> Result D.Error (List Card)
+decode =
     D.decodeValue (D.list cardDecoder)
 
 
