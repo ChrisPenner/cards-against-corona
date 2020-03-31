@@ -43,7 +43,7 @@ interface Game {
 }
 
 interface Flags {
-  user : Player;
+  userID : string;
   assets : Assets;
 }
 
@@ -61,7 +61,7 @@ async function init() {
   ] as Promise<Card[]>[]);
 
   const flags : Flags = {
-    user: {playerID: user.uid},
+    userID: user.uid,
     assets: {whiteCards, blackCards},
   }
   const elmApp = Elm.Main.init({

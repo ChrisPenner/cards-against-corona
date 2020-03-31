@@ -83,7 +83,7 @@ type Page
 
 type AppState
     = AppState
-        { user : Player
+        { userID : String
         , navigationKey : Navigation.Key
         , assets : Assets
         , page : Page
@@ -92,14 +92,14 @@ type AppState
 
 
 type alias Flags =
-    { user : Player
+    { userID : String
     , assets : E.Value
     }
 
 
 init : Flags -> Url -> Navigation.Key -> ( AppState, Cmd Msg )
-init { user, assets } { path } key =
-    case Assets.decode assets of
+init { userID, assets } { path } key =
+    case D.decodeValue Assets.decode assets of
         Err err ->
             ( Failure (D.errorToString err), Cmd.none )
 
@@ -108,7 +108,7 @@ init { user, assets } { path } key =
                 "/" ->
                     ( AppState
                         { navigationKey = key
-                        , user = user
+                        , userID = userID
                         , assets = decodedAssets
                         , page = LandingPage
                         }
@@ -116,14 +116,19 @@ init { user, assets } { path } key =
                     )
 
                 pth ->
-                    ( AppState
-                        { navigationKey = key
-                        , user = user
-                        , assets = decodedAssets
-                        , page = LandingPage
-                        }
-                    , Game.createOrJoinGameT (Game.new decodedAssets user (String.dropLeft 1 pth))
-                    )
+                    case Game.new decodedAssets userID (String.dropLeft 1 pth) of
+                        Just g ->
+                            ( AppState
+                                { navigationKey = key
+                                , userID = userID
+                                , assets = decodedAssets
+                                , page = LandingPage
+                                }
+                            , Game.createOrJoinGameT g
+                            )
+
+                        Nothing ->
+                            ( Failure "Not enough cards in deck to start a game", Cmd.none )
 
 
 
@@ -154,9 +159,14 @@ updateApp msg state =
                 -- ( FailurePage err, _ ) ->
                 --     ( FailurePage err, Cmd.none )
                 StartGame gameID ->
-                    ( AppState model
-                    , Game.createOrJoinGameT (Game.new model.assets model.user gameID)
-                    )
+                    case Game.new model.assets model.userID gameID of
+                        Just g ->
+                            ( AppState model
+                            , Game.createOrJoinGameT g
+                            )
+
+                        Nothing ->
+                            ( Failure "Not enough cards in deck to start a game", Cmd.none )
 
                 JoinGame game ->
                     case Game.load game of
@@ -194,13 +204,13 @@ renderApp state =
         Failure err ->
             renderFailurePage err
 
-        AppState { assets, page, user } ->
+        AppState { page, userID } ->
             case page of
                 LandingPage ->
                     renderLandingPage
 
                 GamePage g ->
-                    Game.render user assets g
+                    Game.render userID g
 
 
 renderLandingPage : H.Html msg

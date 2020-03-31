@@ -8,6 +8,7 @@ import Html as H
 import Html.Attributes as A
 import Json.Decode as D
 import Json.Encode as E
+import List.Extra as List
 import List.Nonempty as Nonempty exposing (Nonempty(..))
 import Loading exposing (..)
 import Player exposing (Player)
@@ -15,6 +16,10 @@ import Random
 import Random.List as Random
 import Utils
 import Uuid
+
+
+type alias UserID =
+    String
 
 
 type alias ID =
@@ -49,15 +54,30 @@ load game =
     ( game, Cmd.none )
 
 
-new : Assets -> Player -> ID -> Game
-new { whiteCards, blackCards } user gameID =
-    { gameID = gameID
-    , players = Dict.singleton user.playerID user
-    , turn = user.playerID
-    , blackCard = { color = Black, text = "" }
-    , whiteDeck = whiteCards
-    , blackDeck = blackCards
-    }
+drawHand : Nonempty Card -> ( Maybe (Nonempty Card), Maybe (Nonempty Card) )
+drawHand startingDeck =
+    case List.splitAt 5 (Nonempty.toList startingDeck) of
+        ( hand, deck ) ->
+            ( Nonempty.fromList hand
+            , Nonempty.fromList deck
+            )
+
+
+new : Assets -> UserID -> ID -> Maybe Game
+new { whiteCards, blackCards } userID gameID =
+    case drawHand whiteCards of
+        ( Just hand, Just deck ) ->
+            Just
+                { gameID = gameID
+                , players = Dict.singleton userID { playerID = userID, hand = hand }
+                , turn = userID
+                , blackCard = { color = Black, text = "" }
+                , whiteDeck = whiteCards
+                , blackDeck = blackCards
+                }
+
+        _ ->
+            Nothing
 
 
 newRound : Assets -> Cmd Msg
@@ -74,30 +94,32 @@ gameDecoder : D.Decoder Game
 gameDecoder =
     D.map6 Game
         (D.field "gameID" D.string)
-        (D.succeed Dict.empty)
+        (D.field "players" (D.dict Player.decode))
         (D.field "turn" D.string)
         (D.field "blackCard" <| Cards.decode Black)
         (D.field "blackDeck" <| Utils.decodeNonempty <| Cards.decode Black)
         (D.field "whiteDeck" <| Utils.decodeNonempty <| Cards.decode White)
 
 
-render : Player -> Assets -> Game -> H.Html msg
-render { playerID } { whiteCards, blackCards } { turn } =
+render : UserID -> Game -> H.Html msg
+render userID { players, turn } =
     H.div []
-        [ H.h1 [] [ H.text "Cards Against Corona" ]
-        , H.h2 []
-            (if playerID == turn then
-                [ H.text "Your turn!" ]
+        [ H.h1 []
+            [ H.text "Cards Against Corona" ]
+        , case Dict.get userID players of
+            Nothing ->
+                H.text "Not sure who's turn it is"
 
-             else
-                [ H.text "Waiting for your friend to play" ]
-            )
-        , renderCards whiteCards
+            Just { hand } ->
+                H.div []
+                    [ if turn == userID then
+                        H.text "Your turn!"
+
+                      else
+                        H.text <| "It's " ++ turn ++ "'s turn"
+                    , renderCards hand
+                    ]
         ]
-
-
-
--- Outgoing
 
 
 createOrJoinGameT : Game -> Cmd msg

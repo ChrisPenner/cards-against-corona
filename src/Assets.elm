@@ -30,13 +30,11 @@ type alias Assets =
 port loadedCards : (D.Value -> msg) -> Sub msg
 
 
-decode : D.Value -> Result D.Error Assets
+decode : D.Decoder Assets
 decode =
-    D.decodeValue
-        (D.map2 Assets
-            (D.field "whiteCards" <| Utils.decodeNonempty <| Cards.decode Cards.White)
-            (D.field "blackCards" <| Utils.decodeNonempty <| Cards.decode Cards.Black)
-        )
+    D.map2 Assets
+        (D.field "whiteCards" <| Utils.decodeNonempty <| Cards.decode Cards.White)
+        (D.field "blackCards" <| Utils.decodeNonempty <| Cards.decode Cards.Black)
 
 
 

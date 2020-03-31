@@ -2,6 +2,11 @@
     "checks" : {
         "SingleFieldRecord": false,
         "ExposeAll": false,
-        "ImportAll": false
+        "ImportAll": false,
+        "UnusedImport": false,
+        "UnusedImportAlias": false,
+        "UnusedImportedVariabe": false,
+        "UnusedTopLevel": false,
+        "UnusedTypeAlias": false
     }
 }
