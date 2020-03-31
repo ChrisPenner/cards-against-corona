@@ -12,24 +12,19 @@ type alias Assets =
     }
 
 
-type Msg
-    = LoadedAssets Assets
-    | Failure String
 
-
-subscriptions : Sub Msg
-subscriptions =
-    Sub.batch
-        [ loadedCards
-            (\r ->
-                case decode r of
-                    Ok assets ->
-                        LoadedAssets assets
-
-                    Err e ->
-                        Failure (D.errorToString e)
-            )
-        ]
+-- subscriptions : Sub Msg
+-- subscriptions =
+--     Sub.batch
+--         [ loadedCards
+--             (\r ->
+--                 case decode r of
+--                     Ok assets ->
+--                         LoadedAssets assets
+-- Err e ->
+--     Failure (D.errorToString e)
+-- )
+-- ]
 
 
 port loadedCards : (D.Value -> msg) -> Sub msg

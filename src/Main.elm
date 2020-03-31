@@ -14,6 +14,7 @@ import Debug exposing (..)
 import Game exposing (Game)
 import Html as H exposing (Html)
 import Json.Decode as D
+import Json.Encode as E
 import Loading exposing (..)
 import Player exposing (Player)
 import Ports exposing (..)
@@ -63,8 +64,7 @@ onUrlChange { path } =
 subscriptions : AppState -> Sub Msg
 subscriptions _ =
     Sub.batch
-        [ Sub.map AssetMsg Assets.subscriptions
-        , Game.joinedGame (Game.decode >> R.unpack (D.errorToString >> EpicFailure) JoinGame)
+        [ Game.joinedGame (Game.decode >> R.unpack (D.errorToString >> EpicFailure) JoinGame)
         ]
 
 
@@ -79,43 +79,51 @@ type ErrType
 type Page
     = LandingPage
     | GamePage Game.Game
-    | FailurePage String
 
 
-type alias AppState =
-    { user : Player
-    , navigationKey : Navigation.Key
-    , assets : Assets
-    , page : Page
-    }
+type AppState
+    = AppState
+        { user : Player
+        , navigationKey : Navigation.Key
+        , assets : Assets
+        , page : Page
+        }
+    | Failure String
 
 
 type alias Flags =
     { user : Player
-    , assets : Assets
+    , assets : E.Value
     }
 
 
 init : Flags -> Url -> Navigation.Key -> ( AppState, Cmd Msg )
-init { user } { path } key =
-    case path of
-        "/" ->
-            ( { navigationKey = key
-              , user = user
-              , assets = Loading
-              , page = LandingPage
-              }
-            , Random.generate identity (Random.map2 StartGame Game.newGameID Random.independentSeed)
-            )
+init { user, assets } { path } key =
+    case Assets.decode assets of
+        Err err ->
+            ( Failure (D.errorToString err), Cmd.none )
 
-        pth ->
-            ( { navigationKey = key
-              , user = user
-              , assets = Loading
-              , page = LandingPage
-              }
-            , Game.createOrJoinGameT (Game.new user (String.dropLeft 1 pth))
-            )
+        Ok decodedAssets ->
+            case path of
+                "/" ->
+                    ( AppState
+                        { navigationKey = key
+                        , user = user
+                        , assets = decodedAssets
+                        , page = LandingPage
+                        }
+                    , Random.generate identity (Random.map StartGame Game.newGameID)
+                    )
+
+                pth ->
+                    ( AppState
+                        { navigationKey = key
+                        , user = user
+                        , assets = decodedAssets
+                        , page = LandingPage
+                        }
+                    , Game.createOrJoinGameT (Game.new decodedAssets user (String.dropLeft 1 pth))
+                    )
 
 
 
@@ -124,42 +132,38 @@ init { user } { path } key =
 
 type Msg
     = Empty
-    | StartGame Game.ID Random.Seed
+    | StartGame Game.ID
     | JoinGame Game
-    | AssetMsg Assets.Msg
     | EpicFailure String
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
-updateApp msg model =
-    case msg of
-        Empty ->
-            ( model, Cmd.none )
+updateApp msg state =
+    case state of
+        Failure err ->
+            ( Failure err, Cmd.none )
 
-        AssetMsg (Assets.Failure err) ->
-            ( { model | page = FailurePage err }, Cmd.none )
+        AppState model ->
+            case msg of
+                Empty ->
+                    ( AppState model, Cmd.none )
 
-        AssetMsg (Assets.LoadedCards cards) ->
-            let
-                ( white, black ) =
-                    List.partition (\x -> x.color == White) cards
-            in
-            ( { model | assets = Loaded { whiteCards = white, blackCards = black } }, Cmd.none )
+                EpicFailure err ->
+                    ( Failure err, Cmd.none )
 
-        EpicFailure err ->
-            ( { model | page = FailurePage err }, Cmd.none )
+                -- ( FailurePage err, _ ) ->
+                --     ( FailurePage err, Cmd.none )
+                StartGame gameID ->
+                    ( AppState model
+                    , Game.createOrJoinGameT (Game.new model.assets model.user gameID)
+                    )
 
-        -- ( FailurePage err, _ ) ->
-        --     ( FailurePage err, Cmd.none )
-        StartGame gameID ->
-            ( model
-            , Game.createOrJoinGameT (Game.new model.user gameID)
-            )
-
-        JoinGame game ->
-            case Game.load game of
-                ( g, cmds ) ->
-                    ( { model | page = GamePage g }, Cmd.batch [ cmds, Navigation.pushUrl model.navigationKey ("/" ++ game.gameID) ] )
+                JoinGame game ->
+                    case Game.load game of
+                        ( g, cmds ) ->
+                            ( AppState { model | page = GamePage g }
+                            , Cmd.batch [ cmds, Navigation.pushUrl model.navigationKey ("/" ++ game.gameID) ]
+                            )
 
 
 
@@ -185,21 +189,18 @@ view model =
 
 
 renderApp : AppState -> H.Html Msg
-renderApp { assets, page, user } =
-    case page of
-        LandingPage ->
-            renderLandingPage
-
-        GamePage g ->
-            case assets of
-                Loading ->
-                    renderLoadingPage
-
-                Loaded loadedAssets ->
-                    Game.render user loadedAssets g
-
-        FailurePage err ->
+renderApp state =
+    case state of
+        Failure err ->
             renderFailurePage err
+
+        AppState { assets, page, user } ->
+            case page of
+                LandingPage ->
+                    renderLandingPage
+
+                GamePage g ->
+                    Game.render user assets g
 
 
 renderLandingPage : H.Html msg

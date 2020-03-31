@@ -8,11 +8,12 @@ import Html as H
 import Html.Attributes as A
 import Json.Decode as D
 import Json.Encode as E
-import List.Nonempty as Nonempty
+import List.Nonempty as Nonempty exposing (Nonempty(..))
 import Loading exposing (..)
 import Player exposing (Player)
 import Random
 import Random.List as Random
+import Utils
 import Uuid
 
 
@@ -30,7 +31,8 @@ type alias Game =
     , players : Dict Player.ID Player
     , turn : Player.ID
     , blackCard : Card
-    , seed : Random.Seed
+    , whiteDeck : Nonempty Card
+    , blackDeck : Nonempty Card
     }
 
 
@@ -47,19 +49,15 @@ load game =
     ( game, Cmd.none )
 
 
-new : Assets -> Player -> ID -> Random.Seed -> Game
-new assets user gameID seed =
+new : Assets -> Player -> ID -> Game
+new { whiteCards, blackCards } user gameID =
     { gameID = gameID
     , players = Dict.singleton user.playerID user
     , turn = user.playerID
     , blackCard = { color = Black, text = "" }
-    , seed = seed
+    , whiteDeck = whiteCards
+    , blackDeck = blackCards
     }
-
-
-pickCard : Random.Seed -> List Card -> { seed : Random.Seed, card : Card }
-pickCard seed cards =
-    Random.step (Nonempty.sample cards)
 
 
 newRound : Assets -> Cmd Msg
@@ -74,12 +72,13 @@ decode =
 
 gameDecoder : D.Decoder Game
 gameDecoder =
-    D.map5 Game
+    D.map6 Game
         (D.field "gameID" D.string)
         (D.succeed Dict.empty)
         (D.field "turn" D.string)
         (D.field "blackCard" <| Cards.decode Black)
-        (D.field "seed" <| D.map Random.initialSeed D.int)
+        (D.field "blackDeck" <| Utils.decodeNonempty <| Cards.decode Black)
+        (D.field "whiteDeck" <| Utils.decodeNonempty <| Cards.decode White)
 
 
 render : Player -> Assets -> Game -> H.Html msg
@@ -93,9 +92,7 @@ render { playerID } { whiteCards, blackCards } { turn } =
              else
                 [ H.text "Waiting for your friend to play" ]
             )
-        , H.div
-            [ A.class "cards" ]
-            (renderCards whiteCards)
+        , renderCards whiteCards
         ]
 
 
@@ -104,13 +101,14 @@ render { playerID } { whiteCards, blackCards } { turn } =
 
 
 createOrJoinGameT : Game -> Cmd msg
-createOrJoinGameT { gameID, players, turn, blackCard, seed } =
+createOrJoinGameT { gameID, players, turn, blackCard, blackDeck, whiteDeck } =
     E.object
         [ ( "gameID", E.string gameID )
         , ( "players", E.dict identity Player.encode players )
         , ( "turn", E.string turn )
         , ( "blackCard", Cards.encode blackCard )
-        , ( "seed", E.int seed )
+        , ( "blackDeck", E.list Cards.encode <| Nonempty.toList blackDeck )
+        , ( "whiteDeck", E.list Cards.encode <| Nonempty.toList whiteDeck )
         ]
         |> createOrJoinGame
 

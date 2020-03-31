@@ -34,7 +34,7 @@ renderCards cards =
         len =
             Nonempty.length cards
     in
-    H.div []
+    H.div [ A.class "cards" ]
         (Nonempty.toList <| Nonempty.indexedMap (\i card -> renderCard (toFloat i / toFloat (len - 1)) card) cards)
 
 

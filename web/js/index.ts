@@ -44,6 +44,7 @@ interface Game {
 
 interface Flags {
   user : Player;
+  assets : Assets;
 }
 
 async function init() {
@@ -54,9 +55,18 @@ async function init() {
     console.error("signed out")
   }
 
+  const [whiteCards, blackCards] : Card[][] = await Promise.all([
+      db.collection("white-cards").get().then(flattenCollection),
+      db.collection("black-cards").get().then(flattenCollection),
+  ] as Promise<Card[]>[]);
+
+  const flags : Flags = {
+    user: {playerID: user.uid},
+    assets: {whiteCards, blackCards},
+  }
   const elmApp = Elm.Main.init({
     node: document.getElementById('elm'),
-    flags: {user: {playerID: user.uid}} as Flags,
+    flags: flags,
   });
 
 
@@ -76,11 +86,6 @@ async function init() {
   });
 
 
-  const [whiteCards, blackCards] : Card[][] = await Promise.all([
-      db.collection("white-cards").get().then(flattenCollection),
-      db.collection("black-cards").get().then(flattenCollection),
-  ] as Promise<Card[]>[]);
-  elmApp.ports.loadedCards.send({whiteCards, blackCards} as Assets);
 };
 init();
 
