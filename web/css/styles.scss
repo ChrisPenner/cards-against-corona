@@ -5,6 +5,12 @@ body {
   background-color: lavender;
 }
 
+.game {
+  & > * {
+    margin: 2em;
+  }
+}
+
 .cards {
   display: flex;
   flex-flow: row;

@@ -145,8 +145,8 @@ type Msg
     | StartGame GameID
     | JoinGame Game
     | EpicFailure String
-    | DrawBlackCard
-    | ReshuffleBlack (Nonempty Card)
+    | DrawCard Color
+    | Reshuffle Color (Nonempty Card)
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
@@ -180,7 +180,7 @@ updateApp msg state =
                             , Cmd.batch [ cmds, Navigation.pushUrl model.navigationKey ("/" ++ game.gameID) ]
                             )
 
-                ReshuffleBlack blackDeck ->
+                Reshuffle Black blackDeck ->
                     case model.page of
                         GamePage g ->
                             ( AppState { model | page = GamePage { g | blackDeck = blackDeck } }
@@ -190,14 +190,44 @@ updateApp msg state =
                         _ ->
                             ( Failure "Can't shuffle on landing page", Cmd.none )
 
-                DrawBlackCard ->
+                Reshuffle White whiteDeck ->
                     case model.page of
-                        GamePage ({ blackDeck } as game) ->
+                        GamePage g ->
+                            ( AppState { model | page = GamePage { g | whiteDeck = whiteDeck } }
+                            , Cmd.none
+                            )
+
+                        _ ->
+                            ( Failure "Can't shuffle on landing page", Cmd.none )
+
+                DrawCard col ->
+                    case ( col, model.page ) of
+                        ( White, GamePage ({ whiteDeck } as game) ) ->
+                            case whiteDeck of
+                                -- Deck is empty, reshuffle
+                                Nonempty a [] ->
+                                    ( AppState { model | page = GamePage (mapPlayer model.userID (addCardToHand a) game) }
+                                    , shuffleCards model.assets.whiteCards (Reshuffle White)
+                                    )
+
+                                Nonempty a (b :: deck) ->
+                                    ( AppState
+                                        { model
+                                            | page =
+                                                GamePage
+                                                    ({ game | whiteDeck = Nonempty b deck }
+                                                        |> mapPlayer model.userID (addCardToHand a)
+                                                    )
+                                        }
+                                    , Cmd.none
+                                    )
+
+                        ( Black, GamePage ({ blackDeck } as game) ) ->
                             case blackDeck of
                                 -- Deck is empty, reshuffle
                                 Nonempty a [] ->
                                     ( AppState { model | page = GamePage { game | blackCard = Just a } }
-                                    , shuffleCards model.assets.blackCards ReshuffleBlack
+                                    , shuffleCards model.assets.blackCards (Reshuffle Black)
                                     )
 
                                 Nonempty a (b :: deck) ->
@@ -207,6 +237,11 @@ updateApp msg state =
 
                         _ ->
                             ( Failure "Got unexpected message on Landing page", Cmd.none )
+
+
+mapPlayer : UserID -> (Player -> Player) -> Game -> Game
+mapPlayer userID mapper game =
+    { game | players = Dict.update userID (Maybe.map mapper) game.players }
 
 
 view : AppState -> Browser.Document Msg
@@ -268,9 +303,21 @@ type alias GameID =
 
 renderGame : UserID -> Game -> H.Html Msg
 renderGame userID { players, turn, whiteDeck, blackDeck, blackCard } =
-    H.div []
+    H.div [ A.class "game" ]
         [ H.h1 []
             [ H.text "Cards Against Corona" ]
+        , H.div [ A.class "container" ]
+            [ H.a [ E.onClick (DrawCard White) ] [ renderDeck (Nonempty.toList whiteDeck) ]
+            , H.div []
+                [ case blackCard of
+                    Nothing ->
+                        H.text "draw a black card"
+
+                    Just card ->
+                        Cards.renderCard Nothing card
+                ]
+            , H.a [ E.onClick (DrawCard Black) ] [ renderDeck (Nonempty.toList blackDeck) ]
+            ]
         , case Dict.get userID players of
             Nothing ->
                 H.text "Not sure who's turn it is"
@@ -284,18 +331,6 @@ renderGame userID { players, turn, whiteDeck, blackDeck, blackCard } =
                         H.text <| "It's " ++ turn ++ "'s turn"
                     , renderCards hand
                     ]
-        , H.div [ A.class "container" ]
-            [ renderDeck (Nonempty.toList whiteDeck)
-            , H.div []
-                [ case blackCard of
-                    Nothing ->
-                        H.text "draw a black card"
-
-                    Just card ->
-                        Cards.renderCard Nothing card
-                ]
-            , H.a [ E.onClick DrawBlackCard ] [ renderDeck (Nonempty.toList blackDeck) ]
-            ]
         ]
 
 
@@ -407,6 +442,11 @@ shuffleCards cards handler =
                     _ ->
                         EpicFailure "not enough cards"
             )
+
+
+addCardToHand : Card -> Player -> Player
+addCardToHand c player =
+    { player | hand = Nonempty.append player.hand (Nonempty c []) }
 
 
 
