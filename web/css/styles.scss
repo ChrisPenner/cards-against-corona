@@ -2,7 +2,15 @@ body {
   display: flex;
   flex-flow: column nowrap;
   font-family: Helvetica, Arial, sans-serif;
-  background-color: lavender;
+  background: #FF5F6D;
+  background: linear-gradient(to bottom left, #FFC371, #FF5F6D);
+  background-attachment: fixed;
+}
+
+h1 {
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-style: italic;
+  font-weight: 300;
 }
 
 .game {
