@@ -49,11 +49,11 @@ main =
 onUrlRequest : Browser.UrlRequest -> Msg
 onUrlRequest r =
     case r of
-        Browser.Internal _ ->
-            todo ""
+        Browser.Internal x ->
+            log (Url.toString x) Empty
 
-        Browser.External _ ->
-            todo ""
+        Browser.External x ->
+            log x Empty
 
 
 onUrlChange : Url.Url -> Msg
@@ -146,7 +146,7 @@ type Msg
     | JoinGame Game
     | EpicFailure String
     | DrawBlackCard
-    | ReshuffleBlack (List Card)
+    | ReshuffleBlack (Nonempty Card)
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
@@ -181,17 +181,29 @@ updateApp msg state =
                             )
 
                 ReshuffleBlack blackDeck ->
-                    todo "Write reshuffle"
+                    case model.page of
+                        GamePage g ->
+                            ( AppState { model | page = GamePage { g | blackDeck = blackDeck } }
+                            , Cmd.none
+                            )
+
+                        _ ->
+                            ( Failure "Can't shuffle on landing page", Cmd.none )
 
                 DrawBlackCard ->
                     case model.page of
                         GamePage ({ blackDeck } as game) ->
                             case blackDeck of
+                                -- Deck is empty, reshuffle
                                 Nonempty a [] ->
-                                    ( AppState { model | page = GamePage { game | blackCard = Just a } }, Random.generate ReshuffleBlack (Random.List.shuffle (Nonempty.toList model.assets.blackCards)) )
+                                    ( AppState { model | page = GamePage { game | blackCard = Just a } }
+                                    , shuffleCards model.assets.blackCards ReshuffleBlack
+                                    )
 
                                 Nonempty a (b :: deck) ->
-                                    ( AppState { model | page = GamePage { game | blackDeck = Nonempty b deck, blackCard = Just a } }, Cmd.none )
+                                    ( AppState { model | page = GamePage { game | blackDeck = Nonempty b deck, blackCard = Just a } }
+                                    , Cmd.none
+                                    )
 
                         _ ->
                             ( Failure "Got unexpected message on Landing page", Cmd.none )
@@ -377,8 +389,24 @@ gameDecoder =
         (D.field "players" (D.dict Player.decode))
         (D.field "turn" D.string)
         (D.field "blackCard" <| D.maybe (Cards.decode Black))
-        (D.field "blackDeck" <| Utils.decodeNonempty <| Cards.decode Black)
         (D.field "whiteDeck" <| Utils.decodeNonempty <| Cards.decode White)
+        (D.field "blackDeck" <| Utils.decodeNonempty <| Cards.decode Black)
+
+
+shuffleCards : Nonempty Card -> (Nonempty Card -> Msg) -> Cmd Msg
+shuffleCards cards handler =
+    Nonempty.toList cards
+        |> Random.List.shuffle
+        |> Random.generate identity
+        |> Cmd.map
+            (\cardList ->
+                case cardList of
+                    x :: xs ->
+                        handler (Nonempty x xs)
+
+                    _ ->
+                        EpicFailure "not enough cards"
+            )
 
 
 
