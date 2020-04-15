@@ -35,17 +35,22 @@ renderCards cards =
             Nonempty.length cards
     in
     H.div [ A.class "cards" ]
-        (Nonempty.toList <| Nonempty.indexedMap (\i card -> renderCard (toFloat i / toFloat (len - 1)) card) cards)
+        (Nonempty.toList <| Nonempty.indexedMap (\i card -> renderCard (Just <| toFloat i / toFloat (len - 1)) card) cards)
 
 
-renderCard : Float -> Card -> H.Html msg
+renderCard : Maybe Float -> Card -> H.Html msg
 renderCard percentage { color, text } =
     let
         spread =
             40.0
 
         rotation =
-            (percentage * spread) - (spread / 2)
+            case percentage of
+                Just p ->
+                    (p * spread) - (spread / 2)
+
+                Nothing ->
+                    0
     in
     H.div
         [ A.class (colorClass color)

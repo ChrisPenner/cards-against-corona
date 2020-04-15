@@ -1,4 +1,4 @@
-module Main exposing (..)
+port module Main exposing (..)
 
 -- Press buttons to increment and decrement a counter.
 --
@@ -11,18 +11,23 @@ import Browser
 import Browser.Navigation as Navigation
 import Cards exposing (..)
 import Debug exposing (..)
-import Game exposing (Game)
+import Dict exposing (Dict)
 import Html as H exposing (Html)
+import Html.Attributes as A
+import Html.Events as E
 import Json.Decode as D
 import Json.Encode as E
-import Loading exposing (..)
+import List.Extra as List
+import List.Nonempty as Nonempty exposing (Nonempty(..))
 import Player exposing (Player)
 import Ports exposing (..)
 import Random
+import Random.List
 import Result as R
 import Result.Extra as R
 import Url exposing (Url)
 import Utils exposing (..)
+import Uuid
 
 
 
@@ -64,7 +69,7 @@ onUrlChange { path } =
 subscriptions : AppState -> Sub Msg
 subscriptions _ =
     Sub.batch
-        [ Game.joinedGame (Game.decode >> R.unpack (D.errorToString >> EpicFailure) JoinGame)
+        [ joinedGame (decodeGame >> R.unpack (D.errorToString >> EpicFailure) JoinGame)
         ]
 
 
@@ -78,7 +83,7 @@ type ErrType
 
 type Page
     = LandingPage
-    | GamePage Game.Game
+    | GamePage Game
 
 
 type AppState
@@ -112,11 +117,11 @@ init { userID, assets } { path } key =
                         , assets = decodedAssets
                         , page = LandingPage
                         }
-                    , Random.generate identity (Random.map StartGame Game.newGameID)
+                    , Random.generate identity (Random.map StartGame newGameID)
                     )
 
                 pth ->
-                    case Game.new decodedAssets userID (String.dropLeft 1 pth) of
+                    case newGame decodedAssets userID (String.dropLeft 1 pth) of
                         Just g ->
                             ( AppState
                                 { navigationKey = key
@@ -124,7 +129,7 @@ init { userID, assets } { path } key =
                                 , assets = decodedAssets
                                 , page = LandingPage
                                 }
-                            , Game.createOrJoinGameT g
+                            , createOrJoinGameT g
                             )
 
                         Nothing ->
@@ -137,9 +142,11 @@ init { userID, assets } { path } key =
 
 type Msg
     = Empty
-    | StartGame Game.ID
+    | StartGame GameID
     | JoinGame Game
     | EpicFailure String
+    | DrawBlackCard
+    | ReshuffleBlack (List Card)
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
@@ -156,39 +163,38 @@ updateApp msg state =
                 EpicFailure err ->
                     ( Failure err, Cmd.none )
 
-                -- ( FailurePage err, _ ) ->
-                --     ( FailurePage err, Cmd.none )
                 StartGame gameID ->
-                    case Game.new model.assets model.userID gameID of
+                    case newGame model.assets model.userID gameID of
                         Just g ->
                             ( AppState model
-                            , Game.createOrJoinGameT g
+                            , createOrJoinGameT g
                             )
 
                         Nothing ->
                             ( Failure "Not enough cards in deck to start a game", Cmd.none )
 
                 JoinGame game ->
-                    case Game.load game of
+                    case loadGame game of
                         ( g, cmds ) ->
                             ( AppState { model | page = GamePage g }
                             , Cmd.batch [ cmds, Navigation.pushUrl model.navigationKey ("/" ++ game.gameID) ]
                             )
 
+                ReshuffleBlack blackDeck ->
+                    todo "Write reshuffle"
 
+                DrawBlackCard ->
+                    case model.page of
+                        GamePage ({ blackDeck } as game) ->
+                            case blackDeck of
+                                Nonempty a [] ->
+                                    ( AppState { model | page = GamePage { game | blackCard = Just a } }, Random.generate ReshuffleBlack (Random.List.shuffle (Nonempty.toList model.assets.blackCards)) )
 
--- updateModel : Msg -> AppState -> ( AppState, Cmd Msg )
--- updateModel msg model =
---     case msg of
---         Empty ->
---             ( model, Cmd.none )
---         StartGame g ->
---             ( model, Game.createGame g )
---         JoinGame { gameID } ->
---             ( model, Navigation.pushUrl model.globals.navigationKey ("/" ++ gameID) )
---         GameMsg m ->
---             ( {model | , Navigation.pushUrl model.globals.navigationKey ("/" ++ gameID) )
--- VIEW
+                                Nonempty a (b :: deck) ->
+                                    ( AppState { model | page = GamePage { game | blackDeck = Nonempty b deck, blackCard = Just a } }, Cmd.none )
+
+                        _ ->
+                            ( Failure "Got unexpected message on Landing page", Cmd.none )
 
 
 view : AppState -> Browser.Document Msg
@@ -210,7 +216,7 @@ renderApp state =
                     renderLandingPage
 
                 GamePage g ->
-                    Game.render userID g
+                    renderGame userID g
 
 
 renderLandingPage : H.Html msg
@@ -234,3 +240,156 @@ renderLoadingPage =
 renderFailurePage : String -> Html msg
 renderFailurePage err =
     H.pre [] [ H.text err ]
+
+
+
+--- GAME
+
+
+type alias UserID =
+    String
+
+
+type alias GameID =
+    String
+
+
+renderGame : UserID -> Game -> H.Html Msg
+renderGame userID { players, turn, whiteDeck, blackDeck, blackCard } =
+    H.div []
+        [ H.h1 []
+            [ H.text "Cards Against Corona" ]
+        , case Dict.get userID players of
+            Nothing ->
+                H.text "Not sure who's turn it is"
+
+            Just { hand } ->
+                H.div []
+                    [ if turn == userID then
+                        H.text "Your turn!"
+
+                      else
+                        H.text <| "It's " ++ turn ++ "'s turn"
+                    , renderCards hand
+                    ]
+        , H.div [ A.class "container" ]
+            [ renderDeck (Nonempty.toList whiteDeck)
+            , H.div []
+                [ case blackCard of
+                    Nothing ->
+                        H.text "draw a black card"
+
+                    Just card ->
+                        Cards.renderCard Nothing card
+                ]
+            , H.a [ E.onClick DrawBlackCard ] [ renderDeck (Nonempty.toList blackDeck) ]
+            ]
+        ]
+
+
+renderDeck : List Card -> H.Html msg
+renderDeck cards =
+    H.div [ A.class "deck" ] <|
+        List.map
+            (\{ color } ->
+                Cards.renderCard Nothing { text = "Cards Against Humanity", color = color }
+            )
+            cards
+
+
+createOrJoinGameT : Game -> Cmd msg
+createOrJoinGameT { gameID, players, turn, blackCard, blackDeck, whiteDeck } =
+    E.object
+        [ ( "gameID", E.string gameID )
+        , ( "players", E.dict identity Player.encode players )
+        , ( "turn", E.string turn )
+        , ( "blackCard", Maybe.withDefault E.null <| Maybe.map Cards.encode blackCard )
+        , ( "blackDeck", E.list Cards.encode <| Nonempty.toList blackDeck )
+        , ( "whiteDeck", E.list Cards.encode <| Nonempty.toList whiteDeck )
+        ]
+        |> createOrJoinGame
+
+
+type alias Game =
+    { gameID : String
+    , players : Dict UserID Player
+    , turn : Player.ID
+    , blackCard : Maybe Card
+    , whiteDeck : Nonempty Card
+    , blackDeck : Nonempty Card
+    }
+
+
+newGameID : Random.Generator GameID
+newGameID =
+    Random.map Uuid.toString Uuid.uuidGenerator
+
+
+
+-- decodeGame
+
+
+loadGame : Game -> ( Game, Cmd msg )
+loadGame game =
+    ( game, Cmd.none )
+
+
+drawHand : Nonempty Card -> ( Maybe (Nonempty Card), Maybe (Nonempty Card) )
+drawHand startingDeck =
+    case List.splitAt 5 (Nonempty.toList startingDeck) of
+        ( hand, deck ) ->
+            ( Nonempty.fromList hand
+            , Nonempty.fromList deck
+            )
+
+
+newGame : Assets -> UserID -> GameID -> Maybe Game
+newGame { whiteCards, blackCards } userID gameID =
+    case drawHand whiteCards of
+        ( Just hand, Just deck ) ->
+            Just
+                { gameID = gameID
+                , players = Dict.singleton userID { playerID = userID, hand = hand }
+                , turn = userID
+                , blackCard = Nothing
+                , whiteDeck = whiteCards
+                , blackDeck = blackCards
+                }
+
+        _ ->
+            Nothing
+
+
+newRound : Assets -> Cmd Msg
+newRound {} =
+    Cmd.none
+
+
+decodeGame : D.Value -> Result D.Error Game
+decodeGame =
+    D.decodeValue gameDecoder
+
+
+gameDecoder : D.Decoder Game
+gameDecoder =
+    D.map6 Game
+        (D.field "gameID" D.string)
+        (D.field "players" (D.dict Player.decode))
+        (D.field "turn" D.string)
+        (D.field "blackCard" <| D.maybe (Cards.decode Black))
+        (D.field "blackDeck" <| Utils.decodeNonempty <| Cards.decode Black)
+        (D.field "whiteDeck" <| Utils.decodeNonempty <| Cards.decode White)
+
+
+
+-- Outgoing
+
+
+port createOrJoinGame : E.Value -> Cmd msg
+
+
+
+-- Incoming
+
+
+port joinedGame : (D.Value -> msg) -> Sub msg

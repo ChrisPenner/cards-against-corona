@@ -7,6 +7,12 @@ import { QuerySnapshot, DocumentSnapshot, DocumentReference, Transaction} from '
 import '@firebase/firestore'
 import '@firebase/auth'
 
+if (module.hot) {
+  module.hot.dispose(() => {
+    window.location.reload();
+  });
+}
+
 const fbApp = firebase.initializeApp({
   apiKey: 'AIzaSyBI_jYegnxS3IHK2RzNVkbrdXW4zdylvaw',
   authDomain: 'localhost',
