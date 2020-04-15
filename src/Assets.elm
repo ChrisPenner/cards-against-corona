@@ -33,8 +33,8 @@ port loadedCards : (D.Value -> msg) -> Sub msg
 decode : D.Decoder Assets
 decode =
     D.map2 Assets
-        (D.field "whiteCards" <| Utils.decodeNonempty <| Cards.decode Cards.White)
-        (D.field "blackCards" <| Utils.decodeNonempty <| Cards.decode Cards.Black)
+        (D.field "whiteCards" <| Utils.decodeNonempty <| Cards.decode)
+        (D.field "blackCards" <| Utils.decodeNonempty <| Cards.decode)
 
 
 

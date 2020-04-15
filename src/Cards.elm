@@ -28,42 +28,25 @@ colorClass c =
             "black"
 
 
-renderCards : Nonempty Card -> H.Html msg
-renderCards cards =
-    let
-        len =
-            Nonempty.length cards
-    in
-    H.div [ A.class "cards" ]
-        (Nonempty.toList <| Nonempty.indexedMap (\i card -> renderCard (Just <| toFloat i / toFloat (len - 1)) card) cards)
+decode : D.Decoder Card
+decode =
+    D.map2
+        Card
+        (D.field "color" D.string
+            |> D.andThen
+                (\col ->
+                    case col of
+                        "white" ->
+                            D.succeed White
 
+                        "black" ->
+                            D.succeed Black
 
-renderCard : Maybe Float -> Card -> H.Html msg
-renderCard percentage { color, text } =
-    let
-        spread =
-            40.0
-
-        rotation =
-            case percentage of
-                Just p ->
-                    (p * spread) - (spread / 2)
-
-                Nothing ->
-                    0
-    in
-    H.div
-        [ A.class (colorClass color)
-        , A.class "card"
-        , A.style "transform" ("rotate(" ++ String.fromFloat rotation ++ "deg)")
-        , A.style "transform-origin" ("rotate(" ++ String.fromFloat rotation ++ "deg)")
-        ]
-        [ H.text text ]
-
-
-decode : Color -> D.Decoder Card
-decode color =
-    D.map2 Card (D.succeed color) (D.field "text" D.string)
+                        _ ->
+                            D.fail ("Bad color " ++ col)
+                )
+        )
+        (D.field "text" D.string)
 
 
 encode : Card -> E.Value

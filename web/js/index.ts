@@ -31,6 +31,7 @@ interface Player {
 
 interface Card {
   text: string;
+  color: string;
 }
 
 interface Assets {
@@ -46,6 +47,7 @@ interface Game {
   players: {[playerID: string]: Player};
   turn: string;
   blackCard: Card;
+  round: {[playerID: string]: Card[]};
 }
 
 interface Flags {
@@ -62,8 +64,12 @@ async function init() {
   }
 
   const [whiteCards, blackCards] : Card[][] = await Promise.all([
-      db.collection("white-cards").get().then(flattenCollection),
-      db.collection("black-cards").get().then(flattenCollection),
+      db.collection("white-cards")
+        .get().then(flattenCollection)
+        .then(cards => cards.map(card => ({color: 'white', ...card}))),
+      db.collection("black-cards")
+        .get().then(flattenCollection)
+        .then(cards => cards.map(card => ({color: 'black', ...card}))),
   ] as Promise<Card[]>[]);
 
   const flags : Flags = {

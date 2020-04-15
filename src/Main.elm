@@ -50,20 +50,20 @@ onUrlRequest : Browser.UrlRequest -> Msg
 onUrlRequest r =
     case r of
         Browser.Internal x ->
-            log (Url.toString x) Empty
+            log (Url.toString x) NoMsg
 
         Browser.External x ->
-            log x Empty
+            log x NoMsg
 
 
 onUrlChange : Url.Url -> Msg
 onUrlChange { path } =
     case path of
         "/" ->
-            Empty
+            NoMsg
 
         _ ->
-            Empty
+            NoMsg
 
 
 subscriptions : AppState -> Sub Msg
@@ -141,12 +141,13 @@ init { userID, assets } { path } key =
 
 
 type Msg
-    = Empty
+    = NoMsg
     | StartGame GameID
     | JoinGame Game
     | EpicFailure String
     | DrawCard Color
     | Reshuffle Color (Nonempty Card)
+    | PlayCard Card
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
@@ -157,7 +158,7 @@ updateApp msg state =
 
         AppState model ->
             case msg of
-                Empty ->
+                NoMsg ->
                     ( AppState model, Cmd.none )
 
                 EpicFailure err ->
@@ -238,10 +239,47 @@ updateApp msg state =
                         _ ->
                             ( Failure "Got unexpected message on Landing page", Cmd.none )
 
+                PlayCard card ->
+                    case model.page of
+                        GamePage game ->
+                            let
+                                g =
+                                    game
+                                        |> mapPlayer model.userID (removeCard card)
+                                        |> addCardToRound model.userID card
+                            in
+                            ( AppState { model | page = GamePage g }, Cmd.none )
+
+                        _ ->
+                            ( Failure "Unexpected message on landing page", Cmd.none )
+
+
+addCardToRound : UserID -> Card -> Game -> Game
+addCardToRound userID card game =
+    let
+        r =
+            game.round
+                |> Dict.update userID
+                    (\playedCards ->
+                        case playedCards of
+                            Nothing ->
+                                Just <| Nonempty card []
+
+                            Just cs ->
+                                Just <| Nonempty.append cs (Nonempty card [])
+                    )
+    in
+    { game | round = r }
+
 
 mapPlayer : UserID -> (Player -> Player) -> Game -> Game
 mapPlayer userID mapper game =
     { game | players = Dict.update userID (Maybe.map mapper) game.players }
+
+
+removeCard : Card -> (Player -> Player)
+removeCard card player =
+    { player | hand = List.filter (\c -> c.text /= card.text) player.hand }
 
 
 view : AppState -> Browser.Document Msg
@@ -302,7 +340,7 @@ type alias GameID =
 
 
 renderGame : UserID -> Game -> H.Html Msg
-renderGame userID { players, turn, whiteDeck, blackDeck, blackCard } =
+renderGame userID { players, turn, whiteDeck, blackDeck, blackCard, round } =
     H.div [ A.class "game" ]
         [ H.h1 []
             [ H.text "Cards Against Corona" ]
@@ -314,7 +352,7 @@ renderGame userID { players, turn, whiteDeck, blackDeck, blackCard } =
                         H.text "draw a black card"
 
                     Just card ->
-                        Cards.renderCard Nothing card
+                        renderCard FaceUp NoMsg Nothing card
                 ]
             , H.a [ E.onClick (DrawCard Black) ] [ renderDeck (Nonempty.toList blackDeck) ]
             ]
@@ -329,32 +367,92 @@ renderGame userID { players, turn, whiteDeck, blackDeck, blackCard } =
 
                       else
                         H.text <| "It's " ++ turn ++ "'s turn"
-                    , renderCards hand
+                    , renderHand hand
+                    , renderRound userID round
                     ]
         ]
 
 
-renderDeck : List Card -> H.Html msg
+renderDeck : List Card -> H.Html Msg
 renderDeck cards =
     H.div [ A.class "deck" ] <|
-        List.map
-            (\{ color } ->
-                Cards.renderCard Nothing { text = "Cards Against Humanity", color = color }
+        List.map (renderCard FaceDown NoMsg Nothing) cards
+
+
+renderStack : CardOrientation -> List Card -> H.Html Msg
+renderStack orientation cards =
+    H.div [ A.class "stack" ] <|
+        List.map (renderCard orientation NoMsg Nothing) cards
+
+
+renderRound : UserID -> Dict UserID (Nonempty Card) -> H.Html Msg
+renderRound userID round =
+    let
+        slots =
+            Dict.toList round
+    in
+    slots
+        |> List.map
+            (\( playerID, cards ) ->
+                if playerID == userID then
+                    renderStack FaceUp (Nonempty.toList cards)
+
+                else
+                    renderStack FaceDown (Nonempty.toList cards)
             )
-            cards
+        |> H.div []
+
+
+renderHand : List Card -> H.Html Msg
+renderHand cards =
+    let
+        len =
+            List.length cards
+    in
+    H.div [ A.class "hand" ]
+        (List.indexedMap (\i card -> renderCard FaceUp (PlayCard card) (Just <| toFloat i / toFloat (len - 1)) card) cards)
+
+
+type CardOrientation
+    = FaceUp
+    | FaceDown
+
+
+renderCard : CardOrientation -> Msg -> Maybe Float -> Card -> H.Html Msg
+renderCard orientation onClick percentage { color, text } =
+    let
+        txt =
+            case orientation of
+                FaceUp ->
+                    text
+
+                FaceDown ->
+                    "Cards Against Humanity"
+
+        spread =
+            40.0
+
+        rotation =
+            case percentage of
+                Just p ->
+                    (p * spread) - (spread / 2)
+
+                Nothing ->
+                    0
+    in
+    H.div
+        [ A.class (colorClass color)
+        , A.class "card"
+        , A.style "transform" ("rotate(" ++ String.fromFloat rotation ++ "deg)")
+        , A.style "transform-origin" ("rotate(" ++ String.fromFloat rotation ++ "deg)")
+        , E.onClick onClick
+        ]
+        [ H.text txt ]
 
 
 createOrJoinGameT : Game -> Cmd msg
-createOrJoinGameT { gameID, players, turn, blackCard, blackDeck, whiteDeck } =
-    E.object
-        [ ( "gameID", E.string gameID )
-        , ( "players", E.dict identity Player.encode players )
-        , ( "turn", E.string turn )
-        , ( "blackCard", Maybe.withDefault E.null <| Maybe.map Cards.encode blackCard )
-        , ( "blackDeck", E.list Cards.encode <| Nonempty.toList blackDeck )
-        , ( "whiteDeck", E.list Cards.encode <| Nonempty.toList whiteDeck )
-        ]
-        |> createOrJoinGame
+createOrJoinGameT g =
+    encodeGame g |> createOrJoinGame
 
 
 type alias Game =
@@ -364,6 +462,7 @@ type alias Game =
     , blackCard : Maybe Card
     , whiteDeck : Nonempty Card
     , blackDeck : Nonempty Card
+    , round : Dict UserID (Nonempty Card)
     }
 
 
@@ -381,11 +480,11 @@ loadGame game =
     ( game, Cmd.none )
 
 
-drawHand : Nonempty Card -> ( Maybe (Nonempty Card), Maybe (Nonempty Card) )
+drawHand : Nonempty Card -> ( List Card, Maybe (Nonempty Card) )
 drawHand startingDeck =
     case List.splitAt 5 (Nonempty.toList startingDeck) of
         ( hand, deck ) ->
-            ( Nonempty.fromList hand
+            ( hand
             , Nonempty.fromList deck
             )
 
@@ -393,7 +492,7 @@ drawHand startingDeck =
 newGame : Assets -> UserID -> GameID -> Maybe Game
 newGame { whiteCards, blackCards } userID gameID =
     case drawHand whiteCards of
-        ( Just hand, Just deck ) ->
+        ( hand, Just deck ) ->
             Just
                 { gameID = gameID
                 , players = Dict.singleton userID { playerID = userID, hand = hand }
@@ -401,6 +500,7 @@ newGame { whiteCards, blackCards } userID gameID =
                 , blackCard = Nothing
                 , whiteDeck = whiteCards
                 , blackDeck = blackCards
+                , round = Dict.empty
                 }
 
         _ ->
@@ -417,15 +517,29 @@ decodeGame =
     D.decodeValue gameDecoder
 
 
+encodeGame : Game -> E.Value
+encodeGame { gameID, players, turn, blackCard, blackDeck, whiteDeck, round } =
+    E.object
+        [ ( "gameID", E.string gameID )
+        , ( "players", E.dict identity Player.encode players )
+        , ( "turn", E.string turn )
+        , ( "blackCard", Maybe.withDefault E.null <| Maybe.map Cards.encode blackCard )
+        , ( "blackDeck", E.list Cards.encode <| Nonempty.toList blackDeck )
+        , ( "whiteDeck", E.list Cards.encode <| Nonempty.toList whiteDeck )
+        , ( "round", E.dict identity (Nonempty.toList >> E.list Cards.encode) round )
+        ]
+
+
 gameDecoder : D.Decoder Game
 gameDecoder =
-    D.map6 Game
+    D.map7 Game
         (D.field "gameID" D.string)
         (D.field "players" (D.dict Player.decode))
         (D.field "turn" D.string)
-        (D.field "blackCard" <| D.maybe (Cards.decode Black))
-        (D.field "whiteDeck" <| Utils.decodeNonempty <| Cards.decode White)
-        (D.field "blackDeck" <| Utils.decodeNonempty <| Cards.decode Black)
+        (D.field "blackCard" <| D.maybe Cards.decode)
+        (D.field "whiteDeck" <| Utils.decodeNonempty <| Cards.decode)
+        (D.field "blackDeck" <| Utils.decodeNonempty <| Cards.decode)
+        (D.field "round" (D.dict (Utils.decodeNonempty <| Cards.decode)))
 
 
 shuffleCards : Nonempty Card -> (Nonempty Card -> Msg) -> Cmd Msg
@@ -446,7 +560,7 @@ shuffleCards cards handler =
 
 addCardToHand : Card -> Player -> Player
 addCardToHand c player =
-    { player | hand = Nonempty.append player.hand (Nonempty c []) }
+    { player | hand = List.append player.hand [ c ] }
 
 
 

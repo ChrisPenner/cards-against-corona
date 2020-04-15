@@ -11,7 +11,7 @@ body {
   }
 }
 
-.cards {
+.hand {
   display: flex;
   flex-flow: row;
   & > .card {
@@ -66,5 +66,14 @@ body {
     color: #F0F0F0;
     background-color: #101010;
     border: 1px solid rgba(255, 255, 255, 0.7);
+  }
+}
+
+.stack {
+  display: flex;
+  flex-flow: column nowrap;
+
+  & > .card {
+    margin-bottom: -160px;
   }
 }
