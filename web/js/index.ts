@@ -95,15 +95,21 @@ async function init() {
 
 
   // Listen From Elm
-  elmApp.ports.createOrJoinGame.subscribe(async function (newGame : Game) {
-    const gameRef: DocumentReference = db.collection('games').doc(newGame.gameID);
-    const game = await db.runTransaction<Game>(async (t: Transaction) => {
+  elmApp.ports.createOrJoinGame.subscribe(async function ({game, player}) {
+    const gameRef: DocumentReference = db.collection('games').doc(game.gameID);
+    game = await db.runTransaction<Game>(async (t: Transaction) => {
       const gameDoc: DocumentSnapshot = await t.get(gameRef);
       if (gameDoc.exists) {
-        return gameDoc.data() as Game;
+        game = gameDoc.data();
+        if (game.players[player.playerID]) {
+          return game;
+        }
+        game.players[player.playerID] = player;
+        t.update(gameRef, {[`players.${player.playerID}`]: player});
+        return game as Game;
       }
-      t.set(gameRef, newGame);
-      return newGame;
+      t.set(gameRef, game);
+      return game;
     });
     elmApp.ports.downloadGame.send(game);
     gameRef.onSnapshot(function(gameDoc) {

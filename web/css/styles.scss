@@ -85,3 +85,11 @@ h1 {
     margin-bottom: -160px;
   }
 }
+
+.submissions {
+  display: flex;
+  flex-flow: row;
+  & > * {
+    margin: 0 1em;
+  }
+}

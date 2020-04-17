@@ -129,11 +129,18 @@ init { userID, assets } { path } key =
                                 , assets = decodedAssets
                                 , page = LandingPage
                                 }
-                            , createOrJoinGameT g
+                            , createOrJoinGameT { game = g, player = newPlayer userID }
                             )
 
                         Nothing ->
                             ( Failure "Not enough cards in deck to start a game", Cmd.none )
+
+
+newPlayer : String -> Player
+newPlayer playerID =
+    { playerID = playerID
+    , hand = []
+    }
 
 
 
@@ -168,7 +175,7 @@ updateApp msg state =
                     case newGame model.assets model.userID gameID of
                         Just g ->
                             ( AppState model
-                            , createOrJoinGameT g
+                            , createOrJoinGameT { game = g, player = newPlayer model.userID }
                             )
 
                         Nothing ->
@@ -430,7 +437,7 @@ renderRound userID { submissions } =
                 else
                     renderStack FaceDown (Nonempty.toList cards)
             )
-        |> H.div []
+        |> H.div [ A.class "submissions" ]
 
 
 renderHand : List Card -> H.Html Msg
@@ -480,9 +487,13 @@ renderCard orientation onClick percentage { color, text } =
         [ H.text txt ]
 
 
-createOrJoinGameT : Game -> Cmd msg
-createOrJoinGameT g =
-    encodeGame g |> createOrJoinGame
+createOrJoinGameT : { game : Game, player : Player } -> Cmd msg
+createOrJoinGameT { game, player } =
+    createOrJoinGame <|
+        E.object
+            [ ( "game", encodeGame game )
+            , ( "player", Player.encode player )
+            ]
 
 
 type alias Round =
