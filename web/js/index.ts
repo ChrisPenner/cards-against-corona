@@ -105,8 +105,10 @@ async function init() {
       t.set(gameRef, newGame);
       return newGame;
     });
-    elmApp.ports.joinedGame.send(game);
-    console.log("game", game);
+    elmApp.ports.downloadGame.send(game);
+    gameRef.onSnapshot(function(gameDoc) {
+      elmApp.ports.downloadGame.send(gameDoc.data());
+    });
   });
 
   // elmApp.ports.drawBlackCard.subscribe(async function (gameID: string) {
@@ -124,13 +126,9 @@ async function init() {
   //   elmApp.ports.syncGame.send(game);
   // });
 
-  elmApp.ports.uploadPlayer.subscribe(async function ({player, gameID, submission}: UploadPlayer) {
-    debugger;
-    const gameRef: DocumentReference = db.collection('games').doc(gameID);
-    gameRef.update({
-      [`players.${player.playerID}`]: player,
-      [`round.submissions.${player.playerID}`]: submission,
-    });
+  elmApp.ports.uploadGame.subscribe(async function (game: Game) {
+    const gameRef: DocumentReference = db.collection('games').doc(game.gameID);
+    gameRef.set(game);
   });
 
 };

@@ -49,11 +49,11 @@ main =
 onUrlRequest : Browser.UrlRequest -> Msg
 onUrlRequest r =
     case r of
-        Browser.Internal x ->
-            log (Url.toString x) NoMsg
+        Browser.Internal _ ->
+            NoMsg
 
-        Browser.External x ->
-            log x NoMsg
+        Browser.External _ ->
+            NoMsg
 
 
 onUrlChange : Url.Url -> Msg
@@ -69,7 +69,7 @@ onUrlChange { path } =
 subscriptions : AppState -> Sub Msg
 subscriptions _ =
     Sub.batch
-        [ joinedGame (decodeGame >> R.unpack (D.errorToString >> EpicFailure) JoinGame)
+        [ downloadGame (decodeGame >> R.unpack (D.errorToString >> EpicFailure) DownloadGame)
         ]
 
 
@@ -143,7 +143,7 @@ init { userID, assets } { path } key =
 type Msg
     = NoMsg
     | StartGame GameID
-    | JoinGame Game
+    | DownloadGame Game
     | EpicFailure String
     | DrawCard Color
     | Reshuffle Color (Nonempty Card)
@@ -174,18 +174,25 @@ updateApp msg state =
                         Nothing ->
                             ( Failure "Not enough cards in deck to start a game", Cmd.none )
 
-                JoinGame game ->
-                    case loadGame game of
-                        ( g, cmds ) ->
-                            ( AppState { model | page = GamePage g }
-                            , Cmd.batch [ cmds, Navigation.pushUrl model.navigationKey ("/" ++ game.gameID) ]
-                            )
+                DownloadGame game ->
+                    ( AppState { model | page = GamePage game }
+                    , case model.page of
+                        LandingPage ->
+                            Navigation.pushUrl model.navigationKey ("/" ++ game.gameID)
+
+                        _ ->
+                            Cmd.none
+                    )
 
                 Reshuffle Black blackDeck ->
                     case model.page of
                         GamePage g ->
-                            ( AppState { model | page = GamePage { g | blackDeck = blackDeck } }
-                            , Cmd.none
+                            let
+                                updatedGame =
+                                    { g | blackDeck = blackDeck }
+                            in
+                            ( AppState { model | page = GamePage updatedGame }
+                            , uploadGameT updatedGame
                             )
 
                         _ ->
@@ -194,8 +201,12 @@ updateApp msg state =
                 Reshuffle White whiteDeck ->
                     case model.page of
                         GamePage g ->
-                            ( AppState { model | page = GamePage { g | whiteDeck = whiteDeck } }
-                            , Cmd.none
+                            let
+                                updatedGame =
+                                    { g | whiteDeck = whiteDeck }
+                            in
+                            ( AppState { model | page = GamePage updatedGame }
+                            , uploadGameT updatedGame
                             )
 
                         _ ->
@@ -207,35 +218,59 @@ updateApp msg state =
                             case whiteDeck of
                                 -- Deck is empty, reshuffle
                                 Nonempty a [] ->
-                                    ( AppState { model | page = GamePage (mapPlayer model.userID (addCardToHand a) game) }
-                                    , shuffleCards model.assets.whiteCards (Reshuffle White)
+                                    let
+                                        updatedGame =
+                                            mapPlayer model.userID (addCardToHand a) game
+                                    in
+                                    ( AppState { model | page = GamePage updatedGame }
+                                    , Cmd.batch [ shuffleCards model.assets.whiteCards (Reshuffle White), uploadGameT updatedGame ]
                                     )
 
                                 Nonempty a (b :: deck) ->
+                                    let
+                                        updatedGame =
+                                            { game | whiteDeck = Nonempty b deck }
+                                                |> mapPlayer model.userID (addCardToHand a)
+                                    in
                                     ( AppState
                                         { model
                                             | page =
                                                 GamePage
-                                                    ({ game | whiteDeck = Nonempty b deck }
-                                                        |> mapPlayer model.userID (addCardToHand a)
-                                                    )
+                                                    updatedGame
                                         }
-                                    , Cmd.none
+                                    , uploadGameT updatedGame
                                     )
 
-                        ( Black, GamePage ({ blackDeck } as game) ) ->
-                            ( AppState model, Cmd.none )
+                        ( Black, GamePage ({ blackDeck, round } as game) ) ->
+                            case blackDeck of
+                                -- Deck is empty, reshuffle
+                                Nonempty a [] ->
+                                    let
+                                        updatedRound =
+                                            { round | blackCard = a }
 
-                        -- case blackDeck of
-                        -- Deck is empty, reshuffle
-                        -- Nonempty a [] ->
-                        --     ( AppState { model | page = GamePage { game | blackCard = Just a } }
-                        --     , shuffleCards model.assets.blackCards (Reshuffle Black)
-                        --     )
-                        -- Nonempty a (b :: deck) ->
-                        --     ( AppState { model | page = GamePage { game | blackDeck = Nonempty b deck, blackCard = Just a } }
-                        --     , Cmd.none
-                        --     )
+                                        updatedGame =
+                                            { game | round = updatedRound }
+                                    in
+                                    ( AppState { model | page = GamePage updatedGame }
+                                    , Cmd.batch
+                                        [ shuffleCards model.assets.blackCards (Reshuffle Black)
+                                        , uploadGameT updatedGame
+                                        ]
+                                    )
+
+                                Nonempty a (b :: deck) ->
+                                    let
+                                        updatedRound =
+                                            { round | blackCard = a }
+
+                                        updatedGame =
+                                            { game | round = updatedRound, blackDeck = Nonempty b deck }
+                                    in
+                                    ( AppState { model | page = GamePage { game | blackDeck = Nonempty b deck, round = updatedRound } }
+                                    , uploadGameT updatedGame
+                                    )
+
                         _ ->
                             ( Failure "Got unexpected message on Landing page", Cmd.none )
 
@@ -248,7 +283,9 @@ updateApp msg state =
                                         |> mapPlayer model.userID (removeCard card)
                                         |> addCardToRound model.userID card
                             in
-                            ( AppState { model | page = GamePage g }, uploadPlayerT model.userID g )
+                            ( AppState { model | page = GamePage g }
+                            , uploadGameT g
+                            )
 
                         _ ->
                             ( Failure "Unexpected message on landing page", Cmd.none )
@@ -473,11 +510,6 @@ newGameID =
 -- decodeGame
 
 
-loadGame : Game -> ( Game, Cmd msg )
-loadGame game =
-    ( game, Cmd.none )
-
-
 drawHand : Nonempty Card -> ( List Card, Maybe (Nonempty Card) )
 drawHand startingDeck =
     case List.splitAt 5 (Nonempty.toList startingDeck) of
@@ -583,40 +615,12 @@ addCardToHand c player =
 port createOrJoinGame : E.Value -> Cmd msg
 
 
-port uploadPlayer : E.Value -> Cmd msg
+port uploadGame : E.Value -> Cmd msg
 
 
-uploadPlayerT : UserID -> Game -> Cmd msg
-uploadPlayerT userID { players, gameID, round } =
-    let
-        player =
-            case Dict.get userID players of
-                Nothing ->
-                    E.null
-
-                Just p ->
-                    Player.encode p
-
-        submission =
-            case Dict.get userID round.submissions of
-                Nothing ->
-                    E.null
-
-                Just s ->
-                    Utils.encodeNonempty Cards.encode s
-
-        obj =
-            E.object
-                [ ( "gameID", E.string gameID )
-                , ( "player", player )
-                , ( "submission", submission )
-                ]
-    in
-    uploadPlayer obj
+uploadGameT : Game -> Cmd msg
+uploadGameT game =
+    uploadGame (encodeGame game)
 
 
-
--- Incoming
-
-
-port joinedGame : (D.Value -> msg) -> Sub msg
+port downloadGame : (D.Value -> msg) -> Sub msg
