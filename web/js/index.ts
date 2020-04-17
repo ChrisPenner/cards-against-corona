@@ -50,8 +50,17 @@ interface Game {
   gameID: string;
   players: {[userID: string]: Player};
   turn: string;
+  whiteDeck: Card[];
+  blackDeck: Card[];
   round: Round;
 }
+
+interface UploadPlayer {
+  gameID: string;
+  player: Player;
+  submission: Card[];
+}
+
 
 interface Flags {
   userID : string;
@@ -107,18 +116,40 @@ async function init() {
   //     if (!gameDoc.exists) {
   //       console.error('Game doesn\'t exist!');
   //     }
-  //     const game = gameDoc.data();
-  //     const newGame = drawBlackCard(game);
+  //     const game: Game = gameDoc.data() as Game;
+  //     const newGame = drawBlackCard(game, blackCards);
   //     t.set(gameRef, newGame);
   //     return newGame
   //   });
-  //   elmApp.ports.joinedGame.send(game);
-  //   console.log("game", game);
+  //   elmApp.ports.syncGame.send(game);
   // });
+
+  elmApp.ports.uploadPlayer.subscribe(async function ({player, gameID, submission}: UploadPlayer) {
+    debugger;
+    const gameRef: DocumentReference = db.collection('games').doc(gameID);
+    gameRef.update({
+      [`players.${player.playerID}`]: player,
+      [`round.submissions.${player.playerID}`]: submission,
+    });
+  });
 
 };
 init();
 
-function drawBlackCard(game: Game) {
-  
+function drawBlackCard(game: Game, blackCards: Card[]): Game {
+  const deck = game.blackDeck;
+  const [first, rest] = [deck[0], deck.slice(1)];
+  const newRound = {
+    ...game.round,
+    blackCard: first,
+  };
+  let blackDeck = rest;
+  if (rest.length === 0) {
+    blackDeck = blackCards;
+  }
+  return {
+    ...game,
+    round: newRound,
+    blackDeck: blackDeck,
+  };
 }

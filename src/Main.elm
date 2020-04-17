@@ -248,7 +248,7 @@ updateApp msg state =
                                         |> mapPlayer model.userID (removeCard card)
                                         |> addCardToRound model.userID card
                             in
-                            ( AppState { model | page = GamePage g }, Cmd.none )
+                            ( AppState { model | page = GamePage g }, uploadPlayerT model.userID g )
 
                         _ ->
                             ( Failure "Unexpected message on landing page", Cmd.none )
@@ -581,6 +581,38 @@ addCardToHand c player =
 
 
 port createOrJoinGame : E.Value -> Cmd msg
+
+
+port uploadPlayer : E.Value -> Cmd msg
+
+
+uploadPlayerT : UserID -> Game -> Cmd msg
+uploadPlayerT userID { players, gameID, round } =
+    let
+        player =
+            case Dict.get userID players of
+                Nothing ->
+                    E.null
+
+                Just p ->
+                    Player.encode p
+
+        submission =
+            case Dict.get userID round.submissions of
+                Nothing ->
+                    E.null
+
+                Just s ->
+                    Utils.encodeNonempty Cards.encode s
+
+        obj =
+            E.object
+                [ ( "gameID", E.string gameID )
+                , ( "player", player )
+                , ( "submission", submission )
+                ]
+    in
+    uploadPlayer obj
 
 
 
