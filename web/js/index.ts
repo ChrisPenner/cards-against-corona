@@ -40,14 +40,17 @@ interface Assets {
 }
 
 
+interface Round {
+  submissions: {[userID: string]: Card[]};
+  blackCard: Card;
+}
 
 
 interface Game {
   gameID: string;
-  players: {[playerID: string]: Player};
+  players: {[userID: string]: Player};
   turn: string;
-  blackCard: Card;
-  round: {[playerID: string]: Card[]};
+  round: Round;
 }
 
 interface Flags {
@@ -97,7 +100,25 @@ async function init() {
     console.log("game", game);
   });
 
+  // elmApp.ports.drawBlackCard.subscribe(async function (gameID: string) {
+  //   const gameRef: DocumentReference = db.collection('games').doc(gameID);
+  //   const game = await db.runTransaction<Game>(async (t: Transaction) => {
+  //     const gameDoc: DocumentSnapshot = await t.get(gameRef);
+  //     if (!gameDoc.exists) {
+  //       console.error('Game doesn\'t exist!');
+  //     }
+  //     const game = gameDoc.data();
+  //     const newGame = drawBlackCard(game);
+  //     t.set(gameRef, newGame);
+  //     return newGame
+  //   });
+  //   elmApp.ports.joinedGame.send(game);
+  //   console.log("game", game);
+  // });
 
 };
 init();
 
+function drawBlackCard(game: Game) {
+  
+}

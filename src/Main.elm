@@ -224,18 +224,18 @@ updateApp msg state =
                                     )
 
                         ( Black, GamePage ({ blackDeck } as game) ) ->
-                            case blackDeck of
-                                -- Deck is empty, reshuffle
-                                Nonempty a [] ->
-                                    ( AppState { model | page = GamePage { game | blackCard = Just a } }
-                                    , shuffleCards model.assets.blackCards (Reshuffle Black)
-                                    )
+                            ( AppState model, Cmd.none )
 
-                                Nonempty a (b :: deck) ->
-                                    ( AppState { model | page = GamePage { game | blackDeck = Nonempty b deck, blackCard = Just a } }
-                                    , Cmd.none
-                                    )
-
+                        -- case blackDeck of
+                        -- Deck is empty, reshuffle
+                        -- Nonempty a [] ->
+                        --     ( AppState { model | page = GamePage { game | blackCard = Just a } }
+                        --     , shuffleCards model.assets.blackCards (Reshuffle Black)
+                        --     )
+                        -- Nonempty a (b :: deck) ->
+                        --     ( AppState { model | page = GamePage { game | blackDeck = Nonempty b deck, blackCard = Just a } }
+                        --     , Cmd.none
+                        --     )
                         _ ->
                             ( Failure "Got unexpected message on Landing page", Cmd.none )
 
@@ -255,10 +255,10 @@ updateApp msg state =
 
 
 addCardToRound : UserID -> Card -> Game -> Game
-addCardToRound userID card game =
+addCardToRound userID card ({ round } as game) =
     let
-        r =
-            game.round
+        s =
+            round.submissions
                 |> Dict.update userID
                     (\playedCards ->
                         case playedCards of
@@ -269,7 +269,7 @@ addCardToRound userID card game =
                                 Just <| Nonempty.append cs (Nonempty card [])
                     )
     in
-    { game | round = r }
+    { game | round = { round | submissions = s } }
 
 
 mapPlayer : UserID -> (Player -> Player) -> Game -> Game
@@ -340,20 +340,13 @@ type alias GameID =
 
 
 renderGame : UserID -> Game -> H.Html Msg
-renderGame userID { players, turn, whiteDeck, blackDeck, blackCard, round } =
+renderGame userID { players, turn, whiteDeck, blackDeck, round } =
     H.div [ A.class "game" ]
         [ H.h1 []
             [ H.text "Cards Against Corona" ]
         , H.div [ A.class "container" ]
             [ H.a [ E.onClick (DrawCard White) ] [ renderDeck (Nonempty.toList whiteDeck) ]
-            , H.div []
-                [ case blackCard of
-                    Nothing ->
-                        H.text "draw a black card"
-
-                    Just card ->
-                        renderCard FaceUp NoMsg Nothing card
-                ]
+            , renderCard FaceUp NoMsg Nothing round.blackCard
             , H.a [ E.onClick (DrawCard Black) ] [ renderDeck (Nonempty.toList blackDeck) ]
             ]
         , case Dict.get userID players of
@@ -385,11 +378,11 @@ renderStack orientation cards =
         List.map (renderCard orientation NoMsg Nothing) cards
 
 
-renderRound : UserID -> Dict UserID (Nonempty Card) -> H.Html Msg
-renderRound userID round =
+renderRound : UserID -> Round -> H.Html Msg
+renderRound userID { submissions } =
     let
         slots =
-            Dict.toList round
+            Dict.toList submissions
     in
     slots
         |> List.map
@@ -455,14 +448,19 @@ createOrJoinGameT g =
     encodeGame g |> createOrJoinGame
 
 
+type alias Round =
+    { submissions : Dict UserID (Nonempty Card)
+    , blackCard : Card
+    }
+
+
 type alias Game =
     { gameID : String
     , players : Dict UserID Player
-    , turn : Player.ID
-    , blackCard : Maybe Card
+    , turn : UserID
     , whiteDeck : Nonempty Card
     , blackDeck : Nonempty Card
-    , round : Dict UserID (Nonempty Card)
+    , round : Round
     }
 
 
@@ -491,16 +489,18 @@ drawHand startingDeck =
 
 newGame : Assets -> UserID -> GameID -> Maybe Game
 newGame { whiteCards, blackCards } userID gameID =
-    case drawHand whiteCards of
-        ( hand, Just deck ) ->
+    case ( drawHand whiteCards, blackCards ) of
+        ( ( hand, Just whiteDeck ), Nonempty firstBlackCard (nextBlackCard :: blackDeck) ) ->
             Just
                 { gameID = gameID
                 , players = Dict.singleton userID { playerID = userID, hand = hand }
                 , turn = userID
-                , blackCard = Nothing
-                , whiteDeck = whiteCards
-                , blackDeck = blackCards
-                , round = Dict.empty
+                , whiteDeck = whiteDeck
+                , blackDeck = Nonempty nextBlackCard blackDeck
+                , round =
+                    { submissions = Dict.empty
+                    , blackCard = firstBlackCard
+                    }
                 }
 
         _ ->
@@ -518,28 +518,41 @@ decodeGame =
 
 
 encodeGame : Game -> E.Value
-encodeGame { gameID, players, turn, blackCard, blackDeck, whiteDeck, round } =
+encodeGame { gameID, players, turn, blackDeck, whiteDeck, round } =
     E.object
         [ ( "gameID", E.string gameID )
         , ( "players", E.dict identity Player.encode players )
         , ( "turn", E.string turn )
-        , ( "blackCard", Maybe.withDefault E.null <| Maybe.map Cards.encode blackCard )
         , ( "blackDeck", E.list Cards.encode <| Nonempty.toList blackDeck )
         , ( "whiteDeck", E.list Cards.encode <| Nonempty.toList whiteDeck )
-        , ( "round", E.dict identity (Nonempty.toList >> E.list Cards.encode) round )
+        , ( "round", encodeRound round )
+        ]
+
+
+encodeRound : Round -> E.Value
+encodeRound { submissions, blackCard } =
+    E.object
+        [ ( "blackCard", Cards.encode blackCard )
+        , ( "submissions", E.dict identity (Nonempty.toList >> E.list Cards.encode) submissions )
         ]
 
 
 gameDecoder : D.Decoder Game
 gameDecoder =
-    D.map7 Game
+    D.map6 Game
         (D.field "gameID" D.string)
         (D.field "players" (D.dict Player.decode))
         (D.field "turn" D.string)
-        (D.field "blackCard" <| D.maybe Cards.decode)
         (D.field "whiteDeck" <| Utils.decodeNonempty <| Cards.decode)
         (D.field "blackDeck" <| Utils.decodeNonempty <| Cards.decode)
-        (D.field "round" (D.dict (Utils.decodeNonempty <| Cards.decode)))
+        (D.field "round" roundDecoder)
+
+
+roundDecoder : D.Decoder Round
+roundDecoder =
+    D.map2 Round
+        (D.field "submissions" (D.dict (Utils.decodeNonempty <| Cards.decode)))
+        (D.field "blackCard" Cards.decode)
 
 
 shuffleCards : Nonempty Card -> (Nonempty Card -> Msg) -> Cmd Msg
