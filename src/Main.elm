@@ -83,7 +83,12 @@ type ErrType
 
 type Page
     = LandingPage
-    | GamePage Game
+    | GamePage Game GameView
+
+
+type GameView
+    = Current
+    | Past
 
 
 type AppState
@@ -158,6 +163,7 @@ type Msg
     | PlayCard Card
     | FlipSubmission UserID Card
     | RevertSubmissions
+    | ToggleGameView
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
@@ -185,7 +191,7 @@ updateApp msg state =
                             ( Failure "Not enough cards in deck to start a game", Cmd.none )
 
                 DownloadGame game ->
-                    ( AppState { model | page = GamePage game }
+                    ( AppState { model | page = GamePage game Current }
                     , case model.page of
                         LandingPage ->
                             Navigation.pushUrl model.navigationKey ("/" ++ game.gameID)
@@ -223,7 +229,7 @@ updateApp msg state =
 
                 NewRound ->
                     state
-                        |> mapGame (\g -> { g | pastRounds = g.round :: g.pastRounds })
+                        |> mapGame (\g -> { g | pastRounds = List.append g.pastRounds (List.singleton g.round) })
                         |> traverseGame
                             (\game ->
                                 case game.blackDeck of
@@ -278,6 +284,19 @@ updateApp msg state =
                         _ ->
                             ( state, Cmd.none )
 
+                ToggleGameView ->
+                    case model.page of
+                        GamePage g v ->
+                            case v of
+                                Current ->
+                                    ( AppState { model | page = GamePage g Past }, Cmd.none )
+
+                                Past ->
+                                    ( AppState { model | page = GamePage g Current }, Cmd.none )
+
+                        _ ->
+                            ( state, Cmd.none )
+
 
 subsToCards : Nonempty Submission -> List Card
 subsToCards =
@@ -290,8 +309,8 @@ mapGame mapper state =
     case state of
         AppState ({ page } as model) ->
             case page of
-                GamePage g ->
-                    AppState { model | page = GamePage (mapper g) }
+                GamePage g v ->
+                    AppState { model | page = GamePage (mapper g) v }
 
                 _ ->
                     state
@@ -305,10 +324,10 @@ traverseGame mapper state =
     case state of
         AppState ({ page } as model) ->
             case page of
-                GamePage g ->
+                GamePage g v ->
                     case mapper g of
                         ( newG, cmds ) ->
-                            ( AppState { model | page = GamePage newG }, cmds )
+                            ( AppState { model | page = GamePage newG v }, cmds )
 
                 _ ->
                     ( state, Cmd.none )
@@ -401,8 +420,11 @@ renderApp state =
                 LandingPage ->
                     renderLandingPage
 
-                GamePage g ->
-                    renderGame userID g
+                GamePage g v ->
+                    H.div []
+                        [ H.div [ A.class "menu" ] [ H.a [ A.class "emoji game-view-toggle", E.onClick ToggleGameView ] [ H.text "🗒️" ] ]
+                        , renderGame userID v g
+                        ]
 
 
 renderLandingPage : H.Html msg
@@ -440,21 +462,29 @@ type alias GameID =
     String
 
 
-renderGame : UserID -> Game -> H.Html Msg
-renderGame userID ({ players, whiteDeck, blackDeck, round } as game) =
-    H.div [ A.class "game" ]
-        [ H.a [ A.class "white-deck", E.onClick DrawWhiteCard ] [ renderDeck (Nonempty.toList whiteDeck) ]
-        , H.div [ A.class "black-card" ] [ H.map (always NoMsg) <| renderCard FaceUp Nothing round.blackCard ]
-        , H.a [ A.class "black-deck", E.onClick NewRound ] [ renderDeck (Nonempty.toList blackDeck) ]
-        , H.div [ A.class "round" ] [ renderRound userID round ]
-        , case Dict.get userID players of
-            Nothing ->
-                H.div [ A.class "hand" ] []
+renderGame : UserID -> GameView -> Game -> H.Html Msg
+renderGame userID gameView ({ players, whiteDeck, blackDeck, round, pastRounds } as game) =
+    case gameView of
+        Current ->
+            H.div [ A.class "game" ]
+                [ H.a [ A.class "white-deck", E.onClick DrawWhiteCard ] [ renderDeck (Nonempty.toList whiteDeck) ]
+                , H.div [ A.class "black-card" ] [ H.map (always NoMsg) <| renderCard FaceUp Nothing round.blackCard ]
+                , H.a [ A.class "black-deck", E.onClick NewRound ] [ renderDeck (Nonempty.toList blackDeck) ]
+                , H.div [ A.class "round" ] [ renderRound userID round ]
+                , case Dict.get userID players of
+                    Nothing ->
+                        H.div [ A.class "hand" ] []
 
-            Just { hand } ->
-                renderHand hand
-        , renderStats game
-        ]
+                    Just { hand } ->
+                        renderHand hand
+                , renderStats game
+                ]
+
+        Past ->
+            H.div []
+                [ H.h1 [] [ H.text "Past Rounds" ]
+                , renderPastRounds userID pastRounds
+                ]
 
 
 renderDeck : List Card -> H.Html Msg
@@ -494,6 +524,20 @@ renderRound userID { submissions } =
                     H.div [ A.class "submission" ] [ stack ]
             )
         |> H.div [ A.class "submissions" ]
+
+
+renderPastRounds : UserID -> List Round -> H.Html Msg
+renderPastRounds userID =
+    List.map
+        (\({ submissions, blackCard } as round) ->
+            H.div [ A.class "past-round" ]
+                [ H.map (always NoMsg) <| renderCard FaceUp Nothing blackCard
+                , renderRound userID round
+                ]
+        )
+        >> H.div [ A.class "past-rounds" ]
+        -- Disable clicks from past rounds
+        >> H.map (always NoMsg)
 
 
 renderHand : List Card -> H.Html Msg
@@ -718,7 +762,7 @@ uploadGameT state =
     case state of
         AppState { page } ->
             case page of
-                GamePage game ->
+                GamePage game _ ->
                     uploadGame (encodeGame game)
 
                 _ ->

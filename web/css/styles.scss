@@ -23,7 +23,7 @@ h1 {
     "black-card white-deck black-deck round"
     "hand       hand       hand       round"
     "stats      stats      stats      round"
-    ".          .          .          round";
+    "past-rounds past-rounds past-rounds round";
 
   & > * {
     margin: 2em;
@@ -169,4 +169,32 @@ h1 {
   & > * {
     margin: 1em;
   }
+}
+
+.past-rounds {
+  grid-area: past-rounds;
+  display: flex;
+  flex-flow: column nowrap;
+}
+
+.past-round {
+    padding-bottom: 4em;
+    margin: 3em;
+    border-bottom: 10px solid rgba(0, 0, 0, 0.3);
+    display: flex;
+}
+
+.game-view-toggle {
+  text-align: right;
+  margin-right: 1em;
+}
+
+.menu {
+  position: fixed;
+  width: 100%;
+}
+
+.game-view-toggle {
+  right: 1px;
+  cursor: pointer;
 }
