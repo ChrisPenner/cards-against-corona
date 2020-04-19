@@ -1,10 +1,80 @@
+:root {
+  --white: white;
+  --black: black;
+  --grad-start: #FFC371;
+  --grad-end: #FF5F6D;
+
+  // Bumblebee
+  // --white: #FEE715;
+  // --black: #101820;
+
+  // Fruity
+  // --white: #fafafa;
+  // --black: #fe4450;
+
+  // Treefrog
+  // --white: #bedf43;
+  // --black: #255c7e;
+
+  // 80's
+  // --white: #18e2df;
+  // --black: #332148;
+
+  // sunset
+  // --white: #f1e2da;
+  // --black: #1f0233;
+
+  // Lotus
+  // --white: #fea981;
+  // --black: #5b0e30;
+
+  // Island life
+  // --white: #f8f6f4;
+  // --black: #72c493;
+
+  // firetruck
+  // --white: #f8f6f4;
+  // --black: #f97566;
+
+
+  // EasyMed
+  // --grad-start: #DCE35B;
+  // --grad-end: #45B649;
+
+  // Vice City
+  // --grad-start: #3494E6;
+  // --grad-end: #EC6EAD;
+
+  // Love Couple
+  // --grad-start: #3a6186;
+  // --grad-end: #89253e;
+
+  // Blood Red
+  // --grad-start: #f85032;
+  // --grad-end: #e73827;
+
+  // Deep Sea Space
+  // --grad-start: #2C3E50;
+  // --grad-end: #4CA1AF;
+
+  // Deep Space
+  // --grad-start: #000000;
+  // --grad-end: #434343;
+
+  // Blush
+  // --grad-start: #B24592;
+  // --grad-end: #F15F79;
+}
+
+
 body {
   flex-flow: column nowrap;
   font-family: Helvetica, Arial, sans-serif;
-  background: #FF5F6D;
-  background: linear-gradient(to bottom left, #FFC371, #FF5F6D);
+  background: var(--grad-end);
+  background: linear-gradient(to bottom left, var(--grad-start), var(--grad-end));
   background-attachment: fixed;
   font-size: 1.0vw;
+  color: var(--black);
 }
 
 h1 {
@@ -81,14 +151,14 @@ h1 {
     top: -1.5em;
   }
   &.white { 
-    color: #101010;
-    background-color: white;
-    border: 1px solid black;
+    color: var(--black);
+    background-color: var(--white);
+    border: 1px solid var(--black);
   }
   &.black {
-    color: #F0F0F0;
-    background-color: #101010;
-    border: 1px solid rgba(255, 255, 255, 0.7);
+    color: var(--white);
+    background-color: var(--black);
+    border: 1px solid var(--white);
   }
 }
 
@@ -157,8 +227,8 @@ h1 {
   flex-flow: row wrap;
   justify-content: space-around;
 
-  background: white;
-  border: 1px solid black;
+  background: var(--white);
+  border: 1px solid var(--black);
 
   border-radius: 10px;
   padding: 1em;

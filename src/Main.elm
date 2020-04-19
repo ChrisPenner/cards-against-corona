@@ -572,7 +572,7 @@ renderCard orientation percentage ({ color, text } as card) =
                     text
 
                 FaceDown ->
-                    "Cards Against Humanity"
+                    "Cards Against Coronavirus"
 
         spread =
             40.0
