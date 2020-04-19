@@ -142,7 +142,8 @@ h1 {
 .stats {
   grid-area: stats;
   display: flex;
-  flex-flow: row;
+  flex-flow: row wrap;
+  justify-content: space-around;
 
   background: white;
   border: 1px solid black;

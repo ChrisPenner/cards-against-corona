@@ -222,12 +222,14 @@ updateApp msg state =
 
                 NewRound ->
                     state
+                        |> mapGame (\g -> { g | pastRounds = g.round :: g.pastRounds })
                         |> traverseGame
                             (\game ->
                                 case game.blackDeck of
                                     -- Deck is empty, reshuffle
                                     Nonempty a [] ->
-                                        ( mapRound (\r -> { r | blackCard = a }) game
+                                        ( game
+                                            |> mapRound (always { blackCard = a, submissions = Dict.empty })
                                         , shuffleCards model.assets.blackCards (Reshuffle Black)
                                         )
 
@@ -473,10 +475,10 @@ renderHand cards =
 
 
 renderStats : Game -> H.Html Msg
-renderStats { players } =
+renderStats { players, pastRounds } =
     H.div [ A.class "stats" ]
-        [ H.div [] [ H.text ("Players: " ++ (String.fromInt <| Dict.size players)) ]
-        , H.div [] [ H.text ("Round: " ++ (String.fromInt <| Dict.size players)) ]
+        [ H.div [] [ H.text ((String.fromInt <| Dict.size players) ++ " Players in the game") ]
+        , H.div [] [ H.text ("You're on round " ++ (String.fromInt <| List.length pastRounds + 1)) ]
         ]
 
 
@@ -540,6 +542,7 @@ type alias Game =
     , whiteDeck : Nonempty Card
     , blackDeck : Nonempty Card
     , round : Round
+    , pastRounds : List Round
     }
 
 
@@ -575,6 +578,7 @@ newGame { whiteCards, blackCards } userID gameID =
                     { submissions = Dict.empty
                     , blackCard = firstBlackCard
                     }
+                , pastRounds = []
                 }
 
         _ ->
@@ -592,7 +596,7 @@ decodeGame =
 
 
 encodeGame : Game -> E.Value
-encodeGame { gameID, players, turn, blackDeck, whiteDeck, round } =
+encodeGame { gameID, players, turn, blackDeck, whiteDeck, round, pastRounds } =
     E.object
         [ ( "gameID", E.string gameID )
         , ( "players", E.dict identity Player.encode players )
@@ -600,6 +604,7 @@ encodeGame { gameID, players, turn, blackDeck, whiteDeck, round } =
         , ( "blackDeck", E.list Cards.encode <| Nonempty.toList blackDeck )
         , ( "whiteDeck", E.list Cards.encode <| Nonempty.toList whiteDeck )
         , ( "round", encodeRound round )
+        , ( "pastRounds", E.list encodeRound pastRounds )
         ]
 
 
@@ -628,13 +633,14 @@ decodeSubmission =
 
 gameDecoder : D.Decoder Game
 gameDecoder =
-    D.map6 Game
+    D.map7 Game
         (D.field "gameID" D.string)
         (D.field "players" (D.dict Player.decode))
         (D.field "turn" D.string)
         (D.field "whiteDeck" <| Utils.decodeNonempty <| Cards.decode)
         (D.field "blackDeck" <| Utils.decodeNonempty <| Cards.decode)
         (D.field "round" roundDecoder)
+        (D.field "pastRounds" <| D.list roundDecoder)
 
 
 roundDecoder : D.Decoder Round
