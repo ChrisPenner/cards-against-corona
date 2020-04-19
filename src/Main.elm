@@ -155,6 +155,7 @@ type Msg
     | DrawCard Color
     | Reshuffle Color (Nonempty Card)
     | PlayCard Card
+    | FlipSubmission UserID Card
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
@@ -297,6 +298,49 @@ updateApp msg state =
                         _ ->
                             ( Failure "Unexpected message on landing page", Cmd.none )
 
+                FlipSubmission playerID card ->
+                    ( state
+                        |> (mapGame << mapSubmission playerID <| flipCard card)
+                    , Cmd.none
+                    )
+
+
+mapGame : (Game -> Game) -> AppState -> AppState
+mapGame mapper state =
+    case state of
+        AppState ({ page } as model) ->
+            case page of
+                GamePage g ->
+                    AppState { model | page = GamePage (mapper g) }
+
+                _ ->
+                    state
+
+        _ ->
+            state
+
+
+flipCard : Card -> Nonempty Submission -> Nonempty Submission
+flipCard { text } =
+    Nonempty.map
+        (\({ card, orientation } as sub) ->
+            if card.text == text then
+                { sub | orientation = flipOrientation orientation }
+
+            else
+                sub
+        )
+
+
+flipOrientation : Orientation -> Orientation
+flipOrientation ori =
+    case ori of
+        FaceUp ->
+            FaceDown
+
+        FaceDown ->
+            FaceUp
+
 
 addCardToRound : UserID -> Card -> Game -> Game
 addCardToRound userID card ({ round } as game) =
@@ -307,10 +351,10 @@ addCardToRound userID card ({ round } as game) =
                     (\playedCards ->
                         case playedCards of
                             Nothing ->
-                                Just <| Nonempty card []
+                                Just <| Nonempty { card = card, orientation = FaceDown } []
 
                             Just cs ->
-                                Just <| Nonempty.append cs (Nonempty card [])
+                                Just <| Nonempty.append cs (Nonempty { card = card, orientation = FaceDown } [])
                     )
     in
     { game | round = { round | submissions = s } }
@@ -319,6 +363,22 @@ addCardToRound userID card ({ round } as game) =
 mapPlayer : UserID -> (Player -> Player) -> Game -> Game
 mapPlayer userID mapper game =
     { game | players = Dict.update userID (Maybe.map mapper) game.players }
+
+
+mapRound : (Round -> Round) -> Game -> Game
+mapRound mapper ({ round } as game) =
+    { game | round = mapper round }
+
+
+mapSubmissions : (Dict UserID (Nonempty Submission) -> Dict UserID (Nonempty Submission)) -> Round -> Round
+mapSubmissions mapper ({ submissions } as round) =
+    { round | submissions = mapper submissions }
+
+
+mapSubmission : UserID -> (Nonempty Submission -> Nonempty Submission) -> Game -> Game
+mapSubmission userID mapper game =
+    game
+        |> (mapRound << mapSubmissions << Dict.update userID << Maybe.map) mapper
 
 
 removeCard : Card -> (Player -> Player)
@@ -390,7 +450,7 @@ renderGame userID { players, turn, whiteDeck, blackDeck, round } =
             [ H.text "Cards Against Corona" ]
         , H.div [ A.class "container" ]
             [ H.a [ E.onClick (DrawCard White) ] [ renderDeck (Nonempty.toList whiteDeck) ]
-            , renderCard FaceUp NoMsg Nothing round.blackCard
+            , H.map (always NoMsg) <| renderCard FaceUp Nothing round.blackCard
             , H.a [ E.onClick (DrawCard Black) ] [ renderDeck (Nonempty.toList blackDeck) ]
             ]
         , case Dict.get userID players of
@@ -413,13 +473,20 @@ renderGame userID { players, turn, whiteDeck, blackDeck, round } =
 renderDeck : List Card -> H.Html Msg
 renderDeck cards =
     H.div [ A.class "deck" ] <|
-        List.map (renderCard FaceDown NoMsg Nothing) cards
+        List.map (H.map (always NoMsg) << renderCard FaceDown Nothing) cards
 
 
-renderStack : CardOrientation -> List Card -> H.Html Msg
-renderStack orientation cards =
-    H.div [ A.class "stack" ] <|
-        List.map (renderCard orientation NoMsg Nothing) cards
+renderStack : UserID -> Cards.Orientation -> List Submission -> H.Html Msg
+renderStack playerID defaultOrientation subs =
+    (case defaultOrientation of
+        FaceUp ->
+            List.map (\{ card } -> renderCard FaceUp Nothing card) subs
+
+        FaceDown ->
+            List.map (\{ card, orientation } -> renderCard orientation Nothing card) subs
+    )
+        |> H.div [ A.class "stack" ]
+        |> H.map (FlipSubmission playerID)
 
 
 renderRound : UserID -> Round -> H.Html Msg
@@ -430,12 +497,12 @@ renderRound userID { submissions } =
     in
     slots
         |> List.map
-            (\( playerID, cards ) ->
+            (\( playerID, subs ) ->
                 if playerID == userID then
-                    renderStack FaceUp (Nonempty.toList cards)
+                    renderStack playerID FaceUp (Nonempty.toList subs)
 
                 else
-                    renderStack FaceDown (Nonempty.toList cards)
+                    renderStack playerID FaceDown (Nonempty.toList subs)
             )
         |> H.div [ A.class "submissions" ]
 
@@ -447,16 +514,11 @@ renderHand cards =
             List.length cards
     in
     H.div [ A.class "hand" ]
-        (List.indexedMap (\i card -> renderCard FaceUp (PlayCard card) (Just <| toFloat i / toFloat (len - 1)) card) cards)
+        (List.indexedMap (\i card -> H.map PlayCard <| renderCard FaceUp (Just <| toFloat i / toFloat (len - 1)) card) cards)
 
 
-type CardOrientation
-    = FaceUp
-    | FaceDown
-
-
-renderCard : CardOrientation -> Msg -> Maybe Float -> Card -> H.Html Msg
-renderCard orientation onClick percentage { color, text } =
+renderCard : Cards.Orientation -> Maybe Float -> Card -> H.Html Card
+renderCard orientation percentage ({ color, text } as card) =
     let
         txt =
             case orientation of
@@ -482,7 +544,7 @@ renderCard orientation onClick percentage { color, text } =
         , A.class "card"
         , A.style "transform" ("rotate(" ++ String.fromFloat rotation ++ "deg)")
         , A.style "transform-origin" ("rotate(" ++ String.fromFloat rotation ++ "deg)")
-        , E.onClick onClick
+        , E.onClick card
         ]
         [ H.text txt ]
 
@@ -496,8 +558,14 @@ createOrJoinGameT { game, player } =
             ]
 
 
+type alias Submission =
+    { card : Card
+    , orientation : Orientation
+    }
+
+
 type alias Round =
-    { submissions : Dict UserID (Nonempty Card)
+    { submissions : Dict UserID (Nonempty Submission)
     , blackCard : Card
     }
 
@@ -576,8 +644,23 @@ encodeRound : Round -> E.Value
 encodeRound { submissions, blackCard } =
     E.object
         [ ( "blackCard", Cards.encode blackCard )
-        , ( "submissions", E.dict identity (Nonempty.toList >> E.list Cards.encode) submissions )
+        , ( "submissions", E.dict identity (Nonempty.toList >> E.list encodeSubmission) submissions )
         ]
+
+
+encodeSubmission : Submission -> E.Value
+encodeSubmission { card, orientation } =
+    E.object
+        [ ( "card", Cards.encode card )
+        , ( "orientation", Cards.encodeOrientation orientation )
+        ]
+
+
+decodeSubmission : D.Decoder Submission
+decodeSubmission =
+    D.map2 Submission
+        (D.field "card" Cards.decode)
+        (D.field "orientation" Cards.decodeOrientation)
 
 
 gameDecoder : D.Decoder Game
@@ -594,7 +677,7 @@ gameDecoder =
 roundDecoder : D.Decoder Round
 roundDecoder =
     D.map2 Round
-        (D.field "submissions" (D.dict (Utils.decodeNonempty <| Cards.decode)))
+        (D.field "submissions" (D.dict (Utils.decodeNonempty <| decodeSubmission)))
         (D.field "blackCard" Cards.decode)
 
 

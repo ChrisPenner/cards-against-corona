@@ -117,21 +117,6 @@ async function init() {
     });
   });
 
-  // elmApp.ports.drawBlackCard.subscribe(async function (gameID: string) {
-  //   const gameRef: DocumentReference = db.collection('games').doc(gameID);
-  //   const game = await db.runTransaction<Game>(async (t: Transaction) => {
-  //     const gameDoc: DocumentSnapshot = await t.get(gameRef);
-  //     if (!gameDoc.exists) {
-  //       console.error('Game doesn\'t exist!');
-  //     }
-  //     const game: Game = gameDoc.data() as Game;
-  //     const newGame = drawBlackCard(game, blackCards);
-  //     t.set(gameRef, newGame);
-  //     return newGame
-  //   });
-  //   elmApp.ports.syncGame.send(game);
-  // });
-
   elmApp.ports.uploadGame.subscribe(async function (game: Game) {
     const gameRef: DocumentReference = db.collection('games').doc(game.gameID);
     gameRef.set(game);

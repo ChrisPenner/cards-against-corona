@@ -4,12 +4,16 @@ import Html as H
 import Html.Attributes as A
 import Json.Decode as D
 import Json.Encode as E
-import List.Nonempty as Nonempty exposing (Nonempty)
 
 
 type Color
     = White
     | Black
+
+
+type Orientation
+    = FaceUp
+    | FaceDown
 
 
 type alias Card =
@@ -63,6 +67,33 @@ encodeColor c =
 
             Black ->
                 "black"
+
+
+encodeOrientation : Orientation -> E.Value
+encodeOrientation ori =
+    case ori of
+        FaceUp ->
+            E.string "face-up"
+
+        FaceDown ->
+            E.string "face-down"
+
+
+decodeOrientation : D.Decoder Orientation
+decodeOrientation =
+    D.string
+        |> D.andThen
+            (\ori ->
+                case ori of
+                    "face-up" ->
+                        D.succeed FaceUp
+
+                    "face-down" ->
+                        D.succeed FaceDown
+
+                    _ ->
+                        D.fail ("Unknown orientation type: " ++ ori)
+            )
 
 
 colorDecoder : D.Decoder Color
