@@ -229,7 +229,7 @@ updateApp msg state =
 
                 NewRound ->
                     state
-                        |> mapGame (\g -> { g | pastRounds = List.append g.pastRounds (List.singleton g.round) })
+                        |> mapGame (\g -> { g | pastRounds = List.append g.pastRounds (List.singleton <| pastifyRound <| g.round) })
                         |> traverseGame
                             (\game ->
                                 case game.blackDeck of
@@ -296,6 +296,11 @@ updateApp msg state =
 
                         _ ->
                             ( state, Cmd.none )
+
+
+pastifyRound : Round -> Round
+pastifyRound ({ submissions } as round) =
+    { round | submissions = Dict.map (\_ subs -> Nonempty.map (\sub -> { sub | orientation = FaceUp }) subs) submissions }
 
 
 subsToCards : Nonempty Submission -> List Card
