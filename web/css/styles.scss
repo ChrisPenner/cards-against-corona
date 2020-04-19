@@ -5,6 +5,7 @@ body {
   background: #FF5F6D;
   background: linear-gradient(to bottom left, #FFC371, #FF5F6D);
   background-attachment: fixed;
+  font-size: 1.0vw;
 }
 
 h1 {
@@ -23,9 +24,13 @@ h1 {
   display: flex;
   flex-flow: row;
   & > .card {
-    margin-right: -130px;
+    margin-right: -6.6em;
+    &:hover {
+      margin-right: -1.5em;
+      // transform: rotate(0deg) !important;
+    }
   }
-  margin: 100px;
+  margin: 5em;
 }
 
 .container {
@@ -39,7 +44,7 @@ h1 {
   display: flex;
   flex-flow: row;
   & > .card {
-    margin-right: -180px;
+    margin-right: -9em;
   }
 }
 
@@ -54,17 +59,14 @@ h1 {
 
   transition: margin 0.2s, transform 0.2s;
 
-  width: 150px;
-  height: 200px;
+  // width: 150px;
+  width: 7.7em;
+  // height: 200px;
+  height: 11em;
 
   &:hover {
-    margin-top: -30px;
+    margin-top: -1.5em;
   }
-  .cards &:hover {
-    margin-right: -15px;
-    transform: rotate(0deg) !important;
-  }
-
   &.white { 
     color: #101010;
     background-color: white;
@@ -82,7 +84,7 @@ h1 {
   flex-flow: column nowrap;
 
   & > .card {
-    margin-bottom: -160px;
+    margin-bottom: -7em;
   }
 }
 
