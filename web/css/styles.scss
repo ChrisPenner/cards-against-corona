@@ -1,5 +1,4 @@
 body {
-  display: flex;
   flex-flow: column nowrap;
   font-family: Helvetica, Arial, sans-serif;
   background: #FF5F6D;
@@ -15,6 +14,15 @@ h1 {
 }
 
 .game {
+  width: 100%;
+  display: grid;
+  grid-template-columns: (50%/3) (50%/3) (50%/3) (50%) ;
+  grid-template-rows: auto;
+  grid-template-areas:
+    "black-card white-deck black-deck round"
+    "hand       hand       hand       round"
+    "stats      stats      stats      round";
+
   & > * {
     margin: 2em;
   }
@@ -24,13 +32,16 @@ h1 {
   display: flex;
   flex-flow: row;
   & > .card {
-    margin-right: -6.6em;
+    margin-right: -3.3em;
+    margin-left: -3.3em;
     &:hover {
-      margin-right: -1.5em;
-      // transform: rotate(0deg) !important;
+      margin-right: 0.5em;
+      &:not(:first-of-type) {
+        margin-left: -1.5em;
+      }
     }
   }
-  margin: 5em;
+  padding-left: 8.3em;
 }
 
 .container {
@@ -44,7 +55,7 @@ h1 {
   display: flex;
   flex-flow: row;
   & > .card {
-    margin-right: -9em;
+    margin-right: -9.4em;
   }
 }
 
@@ -83,15 +94,66 @@ h1 {
   display: flex;
   flex-flow: column nowrap;
 
-  & > .card {
-    margin-bottom: -7em;
+  & > .card:not(:last-of-type) {
+    margin-bottom: -8em;
+    &:hover {
+      margin-bottom: -3em;
+    }
   }
 }
 
 .submissions {
   display: flex;
-  flex-flow: row;
+  flex-flow: row wrap;
   & > * {
     margin: 0 1em;
+  }
+}
+
+.submission {
+  position: relative;
+}
+
+.pointer {
+  font-size: 3em;
+  position: absolute;
+  width: 100%;
+  text-align: center;
+  top: -1.1em;
+  z-index: 1000;
+}
+
+
+.white-deck {
+  grid-area: white-deck;
+}
+.black-deck {
+  grid-area: black-deck;
+}
+.black-card {
+  grid-area: black-card;
+}
+.round {
+  grid-area: round;
+}
+.hand {
+  grid-area: hand;
+}
+.stats {
+  grid-area: stats;
+  display: flex;
+  flex-flow: row;
+
+  background: white;
+  border: 1px solid black;
+
+  border-radius: 10px;
+  padding: 1em;
+  font-size: 1.2em;
+  box-shadow: black 2px 2px 10px 1px;
+  font-weight: bold;
+
+  & > * {
+    margin: 1em;
   }
 }

@@ -152,7 +152,8 @@ type Msg
     | StartGame GameID
     | DownloadGame Game
     | EpicFailure String
-    | DrawCard Color
+    | DrawWhiteCard
+    | NewRound
     | Reshuffle Color (Nonempty Card)
     | PlayCard Card
     | FlipSubmission UserID Card
@@ -202,37 +203,40 @@ updateApp msg state =
                         |> mapGame (\g -> { g | whiteDeck = whiteDeck })
                         |> (\s -> ( s, uploadGameT s ))
 
-                DrawCard col ->
+                DrawWhiteCard ->
                     state
                         |> traverseGame
                             (\game ->
-                                case col of
-                                    White ->
-                                        case game.whiteDeck of
-                                            -- Deck is empty, reshuffle
-                                            Nonempty a [] ->
-                                                ( mapPlayer model.userID (addCardToHand a) game
-                                                , shuffleCards model.assets.whiteCards (Reshuffle White)
-                                                )
+                                case game.whiteDeck of
+                                    -- Deck is empty, reshuffle
+                                    Nonempty a [] ->
+                                        ( mapPlayer model.userID (addCardToHand a) game
+                                        , shuffleCards model.assets.whiteCards (Reshuffle White)
+                                        )
 
-                                            Nonempty a (b :: deck) ->
-                                                ( { game | whiteDeck = Nonempty b deck } |> mapPlayer model.userID (addCardToHand a)
-                                                , Cmd.none
-                                                )
-
-                                    Black ->
-                                        case game.blackDeck of
-                                            -- Deck is empty, reshuffle
-                                            Nonempty a [] ->
-                                                ( mapRound (\r -> { r | blackCard = a }) game
-                                                , shuffleCards model.assets.blackCards (Reshuffle Black)
-                                                )
-
-                                            Nonempty a (b :: deck) ->
-                                                ( game |> mapRound (\r -> { r | blackCard = a }) |> (\g -> { g | blackDeck = Nonempty b deck })
-                                                , Cmd.none
-                                                )
+                                    Nonempty a (b :: deck) ->
+                                        ( { game | whiteDeck = Nonempty b deck } |> mapPlayer model.userID (addCardToHand a)
+                                        , Cmd.none
+                                        )
                             )
+
+                NewRound ->
+                    state
+                        |> traverseGame
+                            (\game ->
+                                case game.blackDeck of
+                                    -- Deck is empty, reshuffle
+                                    Nonempty a [] ->
+                                        ( mapRound (\r -> { r | blackCard = a }) game
+                                        , shuffleCards model.assets.blackCards (Reshuffle Black)
+                                        )
+
+                                    Nonempty a (b :: deck) ->
+                                        ( game |> mapRound (\r -> { r | blackCard = a }) |> (\g -> { g | blackDeck = Nonempty b deck })
+                                        , Cmd.none
+                                        )
+                            )
+                        |> Tuple.mapFirst (mapGame << mapRound << mapSubmissions <| always Dict.empty)
                         |> (\( updatedState, cmds ) ->
                                 ( updatedState, Cmd.batch [ cmds, uploadGameT updatedState ] )
                            )
@@ -407,29 +411,19 @@ type alias GameID =
 
 
 renderGame : UserID -> Game -> H.Html Msg
-renderGame userID { players, turn, whiteDeck, blackDeck, round } =
+renderGame userID ({ players, whiteDeck, blackDeck, round } as game) =
     H.div [ A.class "game" ]
-        [ H.h1 []
-            [ H.text "Cards Against Corona" ]
-        , H.div [ A.class "container" ]
-            [ H.a [ E.onClick (DrawCard White) ] [ renderDeck (Nonempty.toList whiteDeck) ]
-            , H.map (always NoMsg) <| renderCard FaceUp Nothing round.blackCard
-            , H.a [ E.onClick (DrawCard Black) ] [ renderDeck (Nonempty.toList blackDeck) ]
-            ]
+        [ H.a [ A.class "white-deck", E.onClick DrawWhiteCard ] [ renderDeck (Nonempty.toList whiteDeck) ]
+        , H.div [ A.class "black-card" ] [ H.map (always NoMsg) <| renderCard FaceUp Nothing round.blackCard ]
+        , H.a [ A.class "black-deck", E.onClick NewRound ] [ renderDeck (Nonempty.toList blackDeck) ]
+        , H.div [ A.class "round" ] [ renderRound userID round ]
         , case Dict.get userID players of
             Nothing ->
-                H.text "Not sure who's turn it is"
+                H.div [ A.class "hand" ] []
 
             Just { hand } ->
-                H.div []
-                    [ if turn == userID then
-                        H.text "Your turn!"
-
-                      else
-                        H.text <| "It's " ++ turn ++ "'s turn"
-                    , renderHand hand
-                    , renderRound userID round
-                    ]
+                renderHand hand
+        , renderStats game
         ]
 
 
@@ -454,7 +448,17 @@ renderRound userID { submissions } =
     in
     slots
         |> List.map
-            (\( playerID, subs ) -> renderStack playerID (Nonempty.toList subs))
+            (\( playerID, subs ) ->
+                let
+                    stack =
+                        renderStack playerID (Nonempty.toList subs)
+                in
+                if playerID == userID then
+                    H.div [ A.class "submission your-submission" ] [ H.div [ A.class "pointer" ] [ H.text "🙋\u{200D}♂️" ], stack ]
+
+                else
+                    H.div [ A.class "submission" ] [ stack ]
+            )
         |> H.div [ A.class "submissions" ]
 
 
@@ -466,6 +470,14 @@ renderHand cards =
     in
     H.div [ A.class "hand" ]
         (List.indexedMap (\i card -> H.map PlayCard <| renderCard FaceUp (Just <| toFloat i / toFloat (len - 1)) card) cards)
+
+
+renderStats : Game -> H.Html Msg
+renderStats { players } =
+    H.div [ A.class "stats" ]
+        [ H.div [] [ H.text ("Players: " ++ (String.fromInt <| Dict.size players)) ]
+        , H.div [] [ H.text ("Round: " ++ (String.fromInt <| Dict.size players)) ]
+        ]
 
 
 renderCard : Cards.Orientation -> Maybe Float -> Card -> H.Html Card
