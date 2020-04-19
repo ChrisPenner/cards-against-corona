@@ -157,6 +157,7 @@ type Msg
     | Reshuffle Color (Nonempty Card)
     | PlayCard Card
     | FlipSubmission UserID Card
+    | RevertSubmissions
 
 
 updateApp : Msg -> AppState -> ( AppState, Cmd Msg )
@@ -255,6 +256,33 @@ updateApp msg state =
                     state
                         |> (mapGame << mapSubmission playerID <| flipCard card)
                         |> (\s -> ( s, uploadGameT s ))
+
+                RevertSubmissions ->
+                    case state of
+                        AppState { userID } ->
+                            state
+                                |> mapGame
+                                    (\({ round, players } as game) ->
+                                        case Dict.get userID round.submissions of
+                                            Nothing ->
+                                                game
+
+                                            Just subs ->
+                                                { game
+                                                    | round = { round | submissions = Dict.remove userID round.submissions }
+                                                    , players = Dict.update userID (Maybe.map (\p -> { p | hand = List.append p.hand (subsToCards subs) })) <| game.players
+                                                }
+                                    )
+                                |> (\s -> ( s, uploadGameT s ))
+
+                        _ ->
+                            ( state, Cmd.none )
+
+
+subsToCards : Nonempty Submission -> List Card
+subsToCards =
+    Nonempty.map (\{ card } -> card)
+        >> Nonempty.toList
 
 
 mapGame : (Game -> Game) -> AppState -> AppState
@@ -456,7 +484,11 @@ renderRound userID { submissions } =
                         renderStack playerID (Nonempty.toList subs)
                 in
                 if playerID == userID then
-                    H.div [ A.class "submission your-submission" ] [ H.div [ A.class "pointer" ] [ H.text "🙋\u{200D}♂️" ], stack ]
+                    H.div [ A.class "submission your-submission" ]
+                        [ H.div [ A.class "pointer emoji" ] [ H.text "🙋\u{200D}♂️" ]
+                        , stack
+                        , H.div [ A.class "undo emoji", E.onClick RevertSubmissions ] [ H.text "↩️" ]
+                        ]
 
                 else
                     H.div [ A.class "submission" ] [ stack ]

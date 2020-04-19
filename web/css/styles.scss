@@ -14,14 +14,16 @@ h1 {
 }
 
 .game {
+  padding: 2em;
   width: 100%;
   display: grid;
+  box-sizing: border-box;
   grid-template-columns: (50%/3) (50%/3) (50%/3) (50%) ;
-  grid-template-rows: auto;
   grid-template-areas:
     "black-card white-deck black-deck round"
     "hand       hand       hand       round"
-    "stats      stats      stats      round";
+    "stats      stats      stats      round"
+    ".          .          .          round";
 
   & > * {
     margin: 2em;
@@ -29,19 +31,17 @@ h1 {
 }
 
 .hand {
+  grid-area: hand;
   display: flex;
   flex-flow: row;
-  & > .card {
+  & .card {
     margin-right: -3.3em;
     margin-left: -3.3em;
-    &:hover {
-      margin-right: 0.5em;
-      &:not(:first-of-type) {
-        margin-left: -1.5em;
-      }
-    }
   }
-  padding-left: 8.3em;
+  .card:hover ~ .card {
+    opacity: 0.2;
+  }
+  padding: 1em 8.3em;
 }
 
 .container {
@@ -67,8 +67,10 @@ h1 {
   font-weight: bold;
   cursor: pointer;
   transform-origin: center bottom;
+  position: relative;
+  top: 0;
 
-  transition: margin 0.2s, transform 0.2s;
+  transition: all 0.2s;
 
   // width: 150px;
   width: 7.7em;
@@ -76,7 +78,7 @@ h1 {
   height: 11em;
 
   &:hover {
-    margin-top: -1.5em;
+    top: -1.5em;
   }
   &.white { 
     color: #101010;
@@ -94,11 +96,12 @@ h1 {
   display: flex;
   flex-flow: column nowrap;
 
+  .card:hover ~ .card {
+    opacity: 0.2;
+  }
+
   & > .card:not(:last-of-type) {
     margin-bottom: -8em;
-    &:hover {
-      margin-bottom: -3em;
-    }
   }
 }
 
@@ -114,13 +117,25 @@ h1 {
   position: relative;
 }
 
-.pointer {
+.emoji {
   font-size: 3em;
   position: absolute;
   width: 100%;
   text-align: center;
-  top: -1.1em;
   z-index: 1000;
+}
+
+.pointer {
+  top: -1.1em;
+}
+.undo {
+  bottom: 0em;
+  cursor: pointer;
+  text-align: center;
+  transition: font-size 0.2s;
+  &:hover {
+    font-size: 4em;
+  }
 }
 
 
@@ -135,9 +150,6 @@ h1 {
 }
 .round {
   grid-area: round;
-}
-.hand {
-  grid-area: hand;
 }
 .stats {
   grid-area: stats;
