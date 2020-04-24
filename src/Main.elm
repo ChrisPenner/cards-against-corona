@@ -206,12 +206,12 @@ updateApp msg state =
                 Reshuffle Black blackDeck ->
                     state
                         |> mapGame (\g -> { g | blackDeck = blackDeck })
-                        |> (\s -> ( s, uploadGameT s ))
+                        |> (\s -> ( s, uploadGameFromState s ))
 
                 Reshuffle White whiteDeck ->
                     state
                         |> mapGame (\g -> { g | whiteDeck = whiteDeck })
-                        |> (\s -> ( s, uploadGameT s ))
+                        |> (\s -> ( s, uploadGameFromState s ))
 
                 DrawWhiteCard ->
                     state
@@ -225,8 +225,12 @@ updateApp msg state =
                                         )
 
                                     Nonempty a (b :: deck) ->
-                                        ( { game | whiteDeck = Nonempty b deck } |> mapPlayer model.userID (addCardToHand a)
-                                        , Cmd.none
+                                        let
+                                            updatedGame =
+                                                { game | whiteDeck = Nonempty b deck } |> mapPlayer model.userID (addCardToHand a)
+                                        in
+                                        ( updatedGame
+                                        , uploadGameT updatedGame
                                         )
                             )
 
@@ -250,7 +254,7 @@ updateApp msg state =
                             )
                         |> Tuple.mapFirst (mapGame << mapRound << mapSubmissions <| always Dict.empty)
                         |> (\( updatedState, cmds ) ->
-                                ( updatedState, Cmd.batch [ cmds, uploadGameT updatedState ] )
+                                ( updatedState, Cmd.batch [ cmds, uploadGameFromState updatedState ] )
                            )
 
                 PlayCard card ->
@@ -259,12 +263,12 @@ updateApp msg state =
                             (mapPlayer model.userID (removeCard card)
                                 >> addCardToRound model.userID card
                             )
-                        |> (\s -> ( s, uploadGameT s ))
+                        |> (\s -> ( s, uploadGameFromState s ))
 
                 FlipSubmission playerID card ->
                     state
                         |> (mapGame << mapSubmission playerID <| flipCard card)
-                        |> (\s -> ( s, uploadGameT s ))
+                        |> (\s -> ( s, uploadGameFromState s ))
 
                 RevertSubmissions ->
                     case state of
@@ -282,7 +286,7 @@ updateApp msg state =
                                                     , players = Dict.update userID (Maybe.map (\p -> { p | hand = List.append p.hand (subsToCards subs) })) <| game.players
                                                 }
                                     )
-                                |> (\s -> ( s, uploadGameT s ))
+                                |> (\s -> ( s, uploadGameFromState s ))
 
                         _ ->
                             ( state, Cmd.none )
@@ -769,19 +773,24 @@ port createOrJoinGame : E.Value -> Cmd msg
 port uploadGame : E.Value -> Cmd msg
 
 
-uploadGameT : AppState -> Cmd msg
-uploadGameT state =
+uploadGameFromState : AppState -> Cmd msg
+uploadGameFromState state =
     case state of
         AppState { page } ->
             case page of
                 GamePage game _ ->
-                    uploadGame (encodeGame game)
+                    uploadGameT game
 
                 _ ->
                     Cmd.none
 
         _ ->
             Cmd.none
+
+
+uploadGameT : Game -> Cmd msg
+uploadGameT game =
+    uploadGame (encodeGame game)
 
 
 port downloadGame : (D.Value -> msg) -> Sub msg
