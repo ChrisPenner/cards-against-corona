@@ -1,11 +1,5 @@
 port module Main exposing (..)
 
--- Press buttons to increment and decrement a counter.
---
--- Read how it works:
---   https://guide.elm-lang.org/architecture/buttons.html
---
-
 import Assets exposing (Assets)
 import Browser
 import Browser.Navigation as Navigation
@@ -19,7 +13,6 @@ import Json.Decode as D
 import Json.Encode as E
 import List.Extra as List
 import List.Nonempty as Nonempty exposing (Nonempty(..))
-import Player exposing (Player)
 import Ports exposing (..)
 import Random
 import Random.List
@@ -165,6 +158,7 @@ newPlayer : String -> Player
 newPlayer playerID =
     { playerID = playerID
     , hand = []
+    , submissions = []
     }
 
 
@@ -270,65 +264,52 @@ updateApp msg state =
 
                 NewRound ->
                     state
-                        |> mapGame (\g -> { g | pastRounds = List.append g.pastRounds (List.singleton <| pastifyRound <| g.round) })
                         |> traverseGame
                             (\game ->
-                                case game.blackDeck of
-                                    -- Deck is empty, reshuffle
-                                    Nonempty a [] ->
-                                        ( game
-                                            |> mapRound (always { blackCard = a, submissions = Dict.empty })
-                                        , shuffleCards (Nonempty.toList model.assets.blackCards)
-                                            |> Random.generate
-                                                (\cards ->
-                                                    case cards of
-                                                        c :: cs ->
-                                                            Reshuffle White (Nonempty c cs)
+                                game
+                                    |> clearCards
+                                    |> (\clearedGame ->
+                                            case clearedGame.blackDeck of
+                                                -- Deck is empty, reshuffle
+                                                Nonempty a [] ->
+                                                    ( { clearedGame | blackCard = a }
+                                                    , shuffleCards (Nonempty.toList model.assets.blackCards)
+                                                        |> Random.generate
+                                                            (\cards ->
+                                                                case cards of
+                                                                    c :: cs ->
+                                                                        Reshuffle White (Nonempty c cs)
 
-                                                        _ ->
-                                                            EpicFailure "Got empty cards in shuffle"
-                                                )
-                                        )
+                                                                    _ ->
+                                                                        EpicFailure "Got empty cards in shuffle"
+                                                            )
+                                                    )
 
-                                    Nonempty a (b :: deck) ->
-                                        ( game |> mapRound (\r -> { r | blackCard = a }) |> (\g -> { g | blackDeck = Nonempty b deck })
-                                        , Cmd.none
-                                        )
+                                                Nonempty a (b :: deck) ->
+                                                    ( { clearedGame | blackCard = a, blackDeck = Nonempty b deck }
+                                                    , Cmd.none
+                                                    )
+                                       )
                             )
-                        |> Tuple.mapFirst (mapGame << mapRound << mapSubmissions <| always Dict.empty)
                         |> (\( updatedState, cmds ) ->
                                 ( updatedState, Cmd.batch [ cmds, uploadGameFromState updatedState ] )
                            )
 
                 PlayCard card ->
                     state
-                        |> mapGame
-                            (mapPlayer model.userID (removeCard card)
-                                >> addCardToRound model.userID card
-                            )
+                        |> mapGame (mapPlayer model.userID <| playCard card)
                         |> (\s -> ( s, uploadGameFromState s ))
 
                 FlipSubmission playerID card ->
                     state
-                        |> (mapGame << mapSubmission playerID <| flipCard card)
+                        |> (mapGame << mapPlayer playerID << mapSubmissions << List.map <| flipCard card)
                         |> (\s -> ( s, uploadGameFromState s ))
 
                 RevertSubmissions ->
                     case state of
                         AppState { userID } ->
                             state
-                                |> mapGame
-                                    (\({ round, players } as game) ->
-                                        case Dict.get userID round.submissions of
-                                            Nothing ->
-                                                game
-
-                                            Just subs ->
-                                                { game
-                                                    | round = { round | submissions = Dict.remove userID round.submissions }
-                                                    , players = Dict.update userID (Maybe.map (\p -> { p | hand = List.append p.hand (subsToCards subs) })) <| game.players
-                                                }
-                                    )
+                                |> mapGame (mapPlayer userID revertSubmissions)
                                 |> (\s -> ( s, uploadGameFromState s ))
 
                         _ ->
@@ -348,9 +329,41 @@ updateApp msg state =
                             ( state, Cmd.none )
 
 
-pastifyRound : Round -> Round
-pastifyRound ({ submissions } as round) =
-    { round | submissions = Dict.map (\_ subs -> Nonempty.map (\sub -> { sub | orientation = FaceUp }) subs) submissions }
+revertSubmissions : Player -> Player
+revertSubmissions ({ submissions, hand } as player) =
+    let
+        subCards =
+            submissions
+                |> List.map (\{ card } -> card)
+    in
+    { player | submissions = [], hand = List.append hand subCards }
+
+
+clearCards : Game -> Game
+clearCards game =
+    let
+        collectedSubmissions =
+            game.players
+                |> Dict.map (\_ { submissions } -> List.map (\sub -> { sub | orientation = FaceUp }) submissions)
+
+        clearedPlayers =
+            game.players
+                |> Dict.map (\_ player -> { player | submissions = [] })
+
+        round =
+            { blackCard = game.blackCard, submissions = collectedSubmissions }
+    in
+    { game | players = clearedPlayers, pastRounds = List.append game.pastRounds (List.singleton <| round) }
+
+
+gameToRound : Game -> Round
+gameToRound { blackCard, players } =
+    let
+        allSubmissions =
+            players
+                |> Dict.map (\_ { submissions } -> submissions)
+    in
+    { submissions = allSubmissions, blackCard = blackCard }
 
 
 subsToCards : Nonempty Submission -> List Card
@@ -391,16 +404,13 @@ traverseGame mapper state =
             ( state, Cmd.none )
 
 
-flipCard : Card -> Nonempty Submission -> Nonempty Submission
-flipCard { text } =
-    Nonempty.map
-        (\({ card, orientation } as sub) ->
-            if card.text == text then
-                { sub | orientation = flipOrientation orientation }
+flipCard : Card -> Submission -> Submission
+flipCard { text } ({ card, orientation } as submission) =
+    if card.text == text then
+        { submission | orientation = flipOrientation orientation }
 
-            else
-                sub
-        )
+    else
+        submission
 
 
 flipOrientation : Orientation -> Orientation
@@ -413,22 +423,16 @@ flipOrientation ori =
             FaceUp
 
 
-addCardToRound : UserID -> Card -> Game -> Game
-addCardToRound userID card ({ round } as game) =
+playCard : Card -> Player -> Player
+playCard card ({ hand, submissions } as player) =
     let
-        s =
-            round.submissions
-                |> Dict.update userID
-                    (\playedCards ->
-                        case playedCards of
-                            Nothing ->
-                                Just <| Nonempty { card = card, orientation = FaceDown } []
+        newSubmissions =
+            List.append submissions (List.singleton <| { card = card, orientation = FaceDown })
 
-                            Just cs ->
-                                Just <| Nonempty.append cs (Nonempty { card = card, orientation = FaceDown } [])
-                    )
+        newHand =
+            List.filter (\{ text } -> text /= card.text) hand
     in
-    { game | round = { round | submissions = s } }
+    { player | hand = newHand, submissions = newSubmissions }
 
 
 mapPlayer : UserID -> (Player -> Player) -> Game -> Game
@@ -436,20 +440,9 @@ mapPlayer userID mapper game =
     { game | players = Dict.update userID (Maybe.map mapper) game.players }
 
 
-mapRound : (Round -> Round) -> Game -> Game
-mapRound mapper ({ round } as game) =
-    { game | round = mapper round }
-
-
-mapSubmissions : (Dict UserID (Nonempty Submission) -> Dict UserID (Nonempty Submission)) -> Round -> Round
-mapSubmissions mapper ({ submissions } as round) =
-    { round | submissions = mapper submissions }
-
-
-mapSubmission : UserID -> (Nonempty Submission -> Nonempty Submission) -> Game -> Game
-mapSubmission userID mapper game =
-    game
-        |> (mapRound << mapSubmissions << Dict.update userID << Maybe.map) mapper
+mapSubmissions : (List Submission -> List Submission) -> Player -> Player
+mapSubmissions mapper ({ submissions } as player) =
+    { player | submissions = mapper submissions }
 
 
 removeCard : Card -> (Player -> Player)
@@ -518,14 +511,14 @@ type alias GameID =
 
 
 renderGame : UserID -> GameView -> Game -> H.Html Msg
-renderGame userID gameView ({ players, whiteDeck, blackDeck, round, pastRounds } as game) =
+renderGame userID gameView ({ players, whiteDeck, blackDeck, blackCard, pastRounds } as game) =
     case gameView of
         Current ->
             H.div [ A.class "game" ]
                 [ H.a [ A.class "white-deck", E.onClick DrawWhiteCard ] [ renderDeck (Nonempty.toList whiteDeck) ]
-                , H.div [ A.class "black-card" ] [ H.map (always NoMsg) <| renderCard FaceUp Nothing round.blackCard ]
+                , H.div [ A.class "black-card" ] [ H.map (always NoMsg) <| renderCard FaceUp Nothing blackCard ]
                 , H.a [ A.class "black-deck", E.onClick NewRound ] [ renderDeck (Nonempty.toList blackDeck) ]
-                , H.div [ A.class "round" ] [ renderRound userID round ]
+                , H.div [ A.class "round" ] [ renderRound userID (gameToRound game) ]
                 , case Dict.get userID players of
                     Nothing ->
                         H.div [ A.class "hand" ] []
@@ -562,11 +555,12 @@ renderRound userID { submissions } =
             Dict.toList submissions
     in
     slots
+        |> List.filter (\( _, subs ) -> List.length subs > 0)
         |> List.map
             (\( playerID, subs ) ->
                 let
                     stack =
-                        renderStack playerID (Nonempty.toList subs)
+                        renderStack playerID subs
                 in
                 if playerID == userID then
                     H.div [ A.class "submission your-submission" ]
@@ -650,8 +644,19 @@ createOrJoinGameT { game, player } =
     createOrJoinGame <|
         E.object
             [ ( "game", encodeGame game )
-            , ( "player", Player.encode player )
+            , ( "player", encodePlayer player )
             ]
+
+
+type alias Game =
+    { gameID : String
+    , turn : UserID
+    , whiteDeck : Nonempty Card
+    , blackDeck : Nonempty Card
+    , blackCard : Card
+    , players : Dict UserID Player
+    , pastRounds : List Round
+    }
 
 
 type alias Submission =
@@ -660,21 +665,34 @@ type alias Submission =
     }
 
 
+type alias Player =
+    { playerID : UserID
+    , hand : List Card
+    , submissions : List Submission
+    }
+
+
 type alias Round =
-    { submissions : Dict UserID (Nonempty Submission)
+    { submissions : Dict UserID (List Submission)
     , blackCard : Card
     }
 
 
-type alias Game =
-    { gameID : String
-    , players : Dict UserID Player
-    , turn : UserID
-    , whiteDeck : Nonempty Card
-    , blackDeck : Nonempty Card
-    , round : Round
-    , pastRounds : List Round
-    }
+encodePlayer : Player -> E.Value
+encodePlayer { playerID, hand, submissions } =
+    E.object
+        [ ( "playerID", E.string playerID )
+        , ( "hand", E.list Cards.encode hand )
+        , ( "submissions", E.list encodeSubmission submissions )
+        ]
+
+
+playerDecoder : D.Decoder Player
+playerDecoder =
+    D.map3 Player
+        (D.field "playerID" <| D.string)
+        (D.field "hand" <| D.list <| Cards.decode)
+        (D.field "submissions" <| D.list <| decodeSubmission)
 
 
 newGameID : Random.Generator GameID
@@ -701,15 +719,12 @@ newGame whiteCards blackCards userID gameID =
         ( ( hand, Just whiteDeck ), firstBlackCard :: (nextBlackCard :: blackDeck) ) ->
             Just
                 { gameID = gameID
-                , players = Dict.singleton userID { playerID = userID, hand = hand }
                 , turn = userID
                 , whiteDeck = whiteDeck
                 , blackDeck = Nonempty nextBlackCard blackDeck
-                , round =
-                    { submissions = Dict.empty
-                    , blackCard = firstBlackCard
-                    }
+                , blackCard = firstBlackCard
                 , pastRounds = []
+                , players = Dict.singleton userID { playerID = userID, hand = hand, submissions = [] }
                 }
 
         _ ->
@@ -727,14 +742,14 @@ decodeGame =
 
 
 encodeGame : Game -> E.Value
-encodeGame { gameID, players, turn, blackDeck, whiteDeck, round, pastRounds } =
+encodeGame { gameID, players, turn, blackDeck, whiteDeck, blackCard, pastRounds } =
     E.object
         [ ( "gameID", E.string gameID )
-        , ( "players", E.dict identity Player.encode players )
         , ( "turn", E.string turn )
-        , ( "blackDeck", E.list Cards.encode <| Nonempty.toList blackDeck )
         , ( "whiteDeck", E.list Cards.encode <| Nonempty.toList whiteDeck )
-        , ( "round", encodeRound round )
+        , ( "blackDeck", E.list Cards.encode <| Nonempty.toList blackDeck )
+        , ( "blackCard", Cards.encode blackCard )
+        , ( "players", E.dict identity encodePlayer players )
         , ( "pastRounds", E.list encodeRound pastRounds )
         ]
 
@@ -743,7 +758,7 @@ encodeRound : Round -> E.Value
 encodeRound { submissions, blackCard } =
     E.object
         [ ( "blackCard", Cards.encode blackCard )
-        , ( "submissions", E.dict identity (Nonempty.toList >> E.list encodeSubmission) submissions )
+        , ( "submissions", E.dict identity (E.list encodeSubmission) submissions )
         ]
 
 
@@ -766,18 +781,18 @@ gameDecoder : D.Decoder Game
 gameDecoder =
     D.map7 Game
         (D.field "gameID" D.string)
-        (D.field "players" (D.dict Player.decode))
         (D.field "turn" D.string)
         (D.field "whiteDeck" <| Utils.decodeNonempty <| Cards.decode)
         (D.field "blackDeck" <| Utils.decodeNonempty <| Cards.decode)
-        (D.field "round" roundDecoder)
+        (D.field "blackCard" Cards.decode)
+        (D.field "players" (D.dict playerDecoder))
         (D.field "pastRounds" <| D.list roundDecoder)
 
 
 roundDecoder : D.Decoder Round
 roundDecoder =
     D.map2 Round
-        (D.field "submissions" (D.dict (Utils.decodeNonempty <| decodeSubmission)))
+        (D.field "submissions" (D.dict (D.list <| decodeSubmission)))
         (D.field "blackCard" Cards.decode)
 
 
