@@ -97,6 +97,7 @@ type AppState
         , navigationKey : Navigation.Key
         , assets : Assets
         , page : Page
+        , theme : String
         }
     | Failure String
 
@@ -121,6 +122,7 @@ init { userID, assets } { path } key =
                         , userID = userID
                         , assets = decodedAssets
                         , page = LandingPage
+                        , theme = "fruity"
                         }
                     , Random.generate identity (Random.map StartGame newGameID)
                     )
@@ -133,6 +135,7 @@ init { userID, assets } { path } key =
                                 , userID = userID
                                 , assets = decodedAssets
                                 , page = LandingPage
+                                , theme = "fruity"
                                 }
                             , createOrJoinGameT { game = g, player = newPlayer userID }
                             )
@@ -420,16 +423,20 @@ renderApp state =
         Failure err ->
             renderFailurePage err
 
-        AppState { page, userID } ->
-            case page of
-                LandingPage ->
-                    renderLandingPage
+        AppState { page, userID, theme } ->
+            H.div
+                [ A.class theme
+                ]
+                [ case page of
+                    LandingPage ->
+                        renderLandingPage
 
-                GamePage g v ->
-                    H.div []
-                        [ H.div [ A.class "menu" ] [ H.a [ A.class "emoji game-view-toggle", E.onClick ToggleGameView ] [ H.text "🗒️" ] ]
-                        , renderGame userID v g
-                        ]
+                    GamePage g v ->
+                        H.div []
+                            [ H.div [ A.class "menu" ] [ H.a [ A.class "emoji game-view-toggle", E.onClick ToggleGameView ] [ H.text "🗒️" ] ]
+                            , renderGame userID v g
+                            ]
+                ]
 
 
 renderLandingPage : H.Html msg
