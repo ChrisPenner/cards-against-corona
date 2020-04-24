@@ -502,7 +502,7 @@ renderGame userID gameView ({ players, whiteDeck, blackDeck, round, pastRounds }
 renderDeck : List Card -> H.Html Msg
 renderDeck cards =
     H.div [ A.class "deck" ] <|
-        List.map (H.map (always NoMsg) << renderCard FaceDown Nothing) cards
+        List.map (H.map (always NoMsg) << renderCard FaceDown Nothing) (List.take 10 cards)
 
 
 renderStack : UserID -> List Submission -> H.Html Msg
