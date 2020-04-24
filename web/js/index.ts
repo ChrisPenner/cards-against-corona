@@ -117,28 +117,40 @@ async function init() {
     });
   });
 
-  elmApp.ports.uploadGame.subscribe(async function (game: Game) {
-    const gameRef: DocumentReference = db.collection('games').doc(game.gameID);
-    gameRef.set(game);
+  elmApp.ports.uploadGame.subscribe(async function ({players, gameID, ...rest}: Game) {
+    let syncData = {};
+    Object.entries(rest).forEach(([key, value]) => {
+      if (value) {
+        syncData[key] = value;
+      }
+    });
+    if (players) {
+      Object.entries(players).forEach(([playerID, value]) => {
+        if (value) {
+          syncData[`players.${playerID}`] = value;
+        }
+      });
+    }
+    const gameRef: DocumentReference = db.collection('games').doc(gameID);
+    gameRef.update(syncData);
   });
-
 };
 init();
 
-function drawBlackCard(game: Game, blackCards: Card[]): Game {
-  const deck = game.blackDeck;
-  const [first, rest] = [deck[0], deck.slice(1)];
-  const newRound = {
-    ...game.round,
-    blackCard: first,
-  };
-  let blackDeck = rest;
-  if (rest.length === 0) {
-    blackDeck = blackCards;
-  }
-  return {
-    ...game,
-    round: newRound,
-    blackDeck: blackDeck,
-  };
-}
+// function drawBlackCard(game: Game, blackCards: Card[]): Game {
+//   const deck = game.blackDeck;
+//   const [first, rest] = [deck[0], deck.slice(1)];
+//   const newRound = {
+//     ...game.round,
+//     blackCard: first,
+//   };
+//   let blackDeck = rest;
+//   if (rest.length === 0) {
+//     blackDeck = blackCards;
+//   }
+//   return {
+//     ...game,
+//     round: newRound,
+//     blackDeck: blackDeck,
+//   };
+// }

@@ -225,12 +225,12 @@ updateApp msg state =
                 Reshuffle Black blackDeck ->
                     state
                         |> mapGame (\g -> { g | blackDeck = blackDeck })
-                        |> (\s -> ( s, uploadGameFromState s ))
+                        |> (\s -> ( s, syncState state s ))
 
                 Reshuffle White whiteDeck ->
                     state
                         |> mapGame (\g -> { g | whiteDeck = whiteDeck })
-                        |> (\s -> ( s, uploadGameFromState s ))
+                        |> (\s -> ( s, syncState state s ))
 
                 DrawWhiteCard ->
                     state
@@ -258,9 +258,10 @@ updateApp msg state =
                                                 { game | whiteDeck = Nonempty b deck } |> mapPlayer model.userID (addCardToHand a)
                                         in
                                         ( updatedGame
-                                        , uploadGameT updatedGame
+                                        , Cmd.none
                                         )
                             )
+                        |> (\( s, cmds ) -> ( s, Cmd.batch [ cmds, syncState state s ] ))
 
                 NewRound ->
                     state
@@ -292,25 +293,25 @@ updateApp msg state =
                                        )
                             )
                         |> (\( updatedState, cmds ) ->
-                                ( updatedState, Cmd.batch [ cmds, uploadGameFromState updatedState ] )
+                                ( updatedState, Cmd.batch [ cmds, syncState state updatedState ] )
                            )
 
                 PlayCard card ->
                     state
                         |> mapGame (mapPlayer model.userID <| playCard card)
-                        |> (\s -> ( s, uploadGameFromState s ))
+                        |> (\s -> ( s, syncState state s ))
 
                 FlipSubmission playerID card ->
                     state
                         |> (mapGame << mapPlayer playerID << mapSubmissions << List.map <| flipCard card)
-                        |> (\s -> ( s, uploadGameFromState s ))
+                        |> (\s -> ( s, syncState state s ))
 
                 RevertSubmissions ->
                     case state of
                         AppState { userID } ->
                             state
                                 |> mapGame (mapPlayer userID revertSubmissions)
-                                |> (\s -> ( s, uploadGameFromState s ))
+                                |> (\s -> ( s, syncState state s ))
 
                         _ ->
                             ( state, Cmd.none )
@@ -648,13 +649,17 @@ createOrJoinGameT { game, player } =
             ]
 
 
+type alias Players =
+    Dict UserID Player
+
+
 type alias Game =
     { gameID : String
     , turn : UserID
     , whiteDeck : Nonempty Card
     , blackDeck : Nonempty Card
     , blackCard : Card
-    , players : Dict UserID Player
+    , players : Players
     , pastRounds : List Round
     }
 
@@ -816,13 +821,13 @@ port createOrJoinGame : E.Value -> Cmd msg
 port uploadGame : E.Value -> Cmd msg
 
 
-uploadGameFromState : AppState -> Cmd msg
-uploadGameFromState state =
-    case state of
-        AppState { page } ->
-            case page of
-                GamePage game _ ->
-                    uploadGameT game
+syncState : AppState -> AppState -> Cmd msg
+syncState oldState newState =
+    case ( oldState, newState ) of
+        ( AppState oldModel, AppState newModel ) ->
+            case ( oldModel.page, newModel.page ) of
+                ( GamePage oldGame _, GamePage newerGame _ ) ->
+                    Cmd.batch [ syncGame oldGame newerGame ]
 
                 _ ->
                     Cmd.none
@@ -831,9 +836,102 @@ uploadGameFromState state =
             Cmd.none
 
 
-uploadGameT : Game -> Cmd msg
-uploadGameT game =
-    uploadGame (encodeGame game)
+
+-- TODO: Make more granular
+-- A representation of our Game, but with optional syncing at each level
+
+
+type alias GameSync =
+    { gameID : String
+    , turn : Maybe UserID
+    , whiteDeck : Maybe (Nonempty Card)
+    , blackDeck : Maybe (Nonempty Card)
+    , blackCard : Maybe Card
+    , players : Maybe (Dict UserID Player)
+    , pastRounds : Maybe (List Round)
+    }
+
+
+encodeGameSync : GameSync -> E.Value
+encodeGameSync { gameID, turn, whiteDeck, blackDeck, blackCard, players, pastRounds } =
+    [ ( "gameID", E.string gameID ) ]
+        |> optionalField "turn" E.string turn
+        |> optionalField "whiteDeck" (E.list Cards.encode << Nonempty.toList) whiteDeck
+        |> optionalField "blackDeck" (E.list Cards.encode << Nonempty.toList) blackDeck
+        |> optionalField "blackCard" Cards.encode blackCard
+        |> optionalField "players" (E.dict identity encodePlayer) players
+        |> optionalField "pastRounds" (E.list encodeRound) pastRounds
+        |> E.object
+
+
+optionalField : String -> (a -> E.Value) -> Maybe a -> List ( String, E.Value ) -> List ( String, E.Value )
+optionalField key serialize val fields =
+    case val of
+        Nothing ->
+            fields
+
+        Just v ->
+            ( key, serialize v ) :: fields
+
+
+syncGame : Game -> Game -> Cmd msg
+syncGame oldGame newerGame =
+    let
+        syncer =
+            { gameID = newerGame.gameID
+            , turn =
+                if oldGame.turn /= newerGame.turn then
+                    Just newerGame.turn
+
+                else
+                    Nothing
+            , whiteDeck =
+                if oldGame.whiteDeck /= newerGame.whiteDeck then
+                    Just newerGame.whiteDeck
+
+                else
+                    Nothing
+            , blackDeck =
+                if oldGame.blackDeck /= newerGame.blackDeck then
+                    Just newerGame.blackDeck
+
+                else
+                    Nothing
+            , blackCard =
+                if oldGame.blackCard /= newerGame.blackCard then
+                    Just newerGame.blackCard
+
+                else
+                    Nothing
+            , players =
+                if oldGame.players /= newerGame.players then
+                    Just (syncPlayers oldGame.players newerGame.players)
+
+                else
+                    Nothing
+            , pastRounds =
+                if oldGame.pastRounds /= newerGame.pastRounds then
+                    Just newerGame.pastRounds
+
+                else
+                    Nothing
+            }
+    in
+    uploadGame (encodeGameSync syncer)
+
+
+syncPlayers : Players -> Players -> Dict UserID Player
+syncPlayers oldPlayers newPlayers =
+    newPlayers
+        |> Dict.filter
+            (\id newP ->
+                case Dict.get id oldPlayers of
+                    Nothing ->
+                        True
+
+                    Just oldP ->
+                        oldP /= newP
+            )
 
 
 port downloadGame : (D.Value -> msg) -> Sub msg
