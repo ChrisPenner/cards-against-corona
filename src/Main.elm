@@ -565,7 +565,7 @@ renderHand cards =
 renderStats : Game -> H.Html Msg
 renderStats { players, pastRounds } =
     H.div [ A.class "stats" ]
-        [ H.div [] [ H.text ((String.fromInt <| Dict.size players) ++ " Players in the game") ]
+        [ H.div [] [ H.text ((String.fromInt <| Dict.size players) ++ " Player(s) in the game") ]
         , H.div [] [ H.text ("You're on round " ++ (String.fromInt <| List.length pastRounds + 1)) ]
         ]
 
