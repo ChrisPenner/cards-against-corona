@@ -97,7 +97,6 @@ type AppState
         , navigationKey : Navigation.Key
         , assets : Assets
         , page : Page
-        , theme : String
         }
     | Failure String
 
@@ -106,6 +105,26 @@ type alias Flags =
     { userID : String
     , assets : E.Value
     }
+
+
+startGame : Maybe GameID -> Assets -> Cmd Msg
+startGame gameID { whiteCards, blackCards } =
+    let
+        rGameID =
+            case gameID of
+                Nothing ->
+                    newGameID
+
+                Just gid ->
+                    Random.constant gid
+    in
+    Random.generate StartGame
+        (Random.map3
+            StartGameData
+            rGameID
+            (shuffleCards (Nonempty.toList whiteCards))
+            (shuffleCards (Nonempty.toList blackCards))
+        )
 
 
 init : Flags -> Url -> Navigation.Key -> ( AppState, Cmd Msg )
@@ -122,26 +141,24 @@ init { userID, assets } { path } key =
                         , userID = userID
                         , assets = decodedAssets
                         , page = LandingPage
-                        , theme = "fruity"
                         }
-                    , Random.generate identity (Random.map StartGame newGameID)
+                    , startGame Nothing decodedAssets
                     )
 
                 pth ->
-                    case newGame decodedAssets userID (String.dropLeft 1 pth) of
-                        Just g ->
-                            ( AppState
-                                { navigationKey = key
-                                , userID = userID
-                                , assets = decodedAssets
-                                , page = LandingPage
-                                , theme = "fruity"
-                                }
-                            , createOrJoinGameT { game = g, player = newPlayer userID }
-                            )
-
-                        Nothing ->
-                            ( Failure "Not enough cards in deck to start a game", Cmd.none )
+                    let
+                        gameID =
+                            String.dropLeft 1 pth
+                    in
+                    -- case newGame decodedAssets userID (String.dropLeft 1 pth) of
+                    ( AppState
+                        { navigationKey = key
+                        , userID = userID
+                        , assets = decodedAssets
+                        , page = LandingPage
+                        }
+                    , startGame (Just gameID) decodedAssets
+                    )
 
 
 newPlayer : String -> Player
@@ -155,9 +172,14 @@ newPlayer playerID =
 -- UPDATE
 
 
+type alias StartGameData =
+    { gameID : GameID, whiteDeck : List Card, blackDeck : List Card }
+
+
 type Msg
     = NoMsg
-    | StartGame GameID
+    | StartGame StartGameData
+    | NewGame
     | DownloadGame Game
     | EpicFailure String
     | DrawWhiteCard
@@ -183,8 +205,11 @@ updateApp msg state =
                 EpicFailure err ->
                     ( Failure err, Cmd.none )
 
-                StartGame gameID ->
-                    case newGame model.assets model.userID gameID of
+                NewGame ->
+                    ( state, startGame Nothing model.assets )
+
+                StartGame { gameID, whiteDeck, blackDeck } ->
+                    case newGame whiteDeck blackDeck model.userID gameID of
                         Just g ->
                             ( AppState model
                             , createOrJoinGameT { game = g, player = newPlayer model.userID }
@@ -221,7 +246,16 @@ updateApp msg state =
                                     -- Deck is empty, reshuffle
                                     Nonempty a [] ->
                                         ( mapPlayer model.userID (addCardToHand a) game
-                                        , shuffleCards model.assets.whiteCards (Reshuffle White)
+                                        , shuffleCards (Nonempty.toList model.assets.whiteCards)
+                                            |> Random.generate
+                                                (\cards ->
+                                                    case cards of
+                                                        c :: cs ->
+                                                            Reshuffle White (Nonempty c cs)
+
+                                                        _ ->
+                                                            EpicFailure "Got empty cards in shuffle"
+                                                )
                                         )
 
                                     Nonempty a (b :: deck) ->
@@ -244,7 +278,16 @@ updateApp msg state =
                                     Nonempty a [] ->
                                         ( game
                                             |> mapRound (always { blackCard = a, submissions = Dict.empty })
-                                        , shuffleCards model.assets.blackCards (Reshuffle Black)
+                                        , shuffleCards (Nonempty.toList model.assets.blackCards)
+                                            |> Random.generate
+                                                (\cards ->
+                                                    case cards of
+                                                        c :: cs ->
+                                                            Reshuffle White (Nonempty c cs)
+
+                                                        _ ->
+                                                            EpicFailure "Got empty cards in shuffle"
+                                                )
                                         )
 
                                     Nonempty a (b :: deck) ->
@@ -427,20 +470,16 @@ renderApp state =
         Failure err ->
             renderFailurePage err
 
-        AppState { page, userID, theme } ->
-            H.div
-                [ A.class theme
-                ]
-                [ case page of
-                    LandingPage ->
-                        renderLandingPage
+        AppState { page, userID } ->
+            case page of
+                LandingPage ->
+                    renderLandingPage
 
-                    GamePage g v ->
-                        H.div []
-                            [ H.div [ A.class "menu" ] [ H.a [ A.class "emoji game-view-toggle", E.onClick ToggleGameView ] [ H.text "🗒️" ] ]
-                            , renderGame userID v g
-                            ]
-                ]
+                GamePage g v ->
+                    H.div []
+                        [ H.div [ A.class "menu" ] [ H.a [ A.class "emoji game-view-toggle", E.onClick ToggleGameView ] [ H.text "🗒️" ] ]
+                        , renderGame userID v g
+                        ]
 
 
 renderLandingPage : H.Html msg
@@ -647,19 +686,19 @@ newGameID =
 -- decodeGame
 
 
-drawHand : Nonempty Card -> ( List Card, Maybe (Nonempty Card) )
+drawHand : List Card -> ( List Card, Maybe (Nonempty Card) )
 drawHand startingDeck =
-    case List.splitAt 5 (Nonempty.toList startingDeck) of
+    case List.splitAt 5 startingDeck of
         ( hand, deck ) ->
             ( hand
             , Nonempty.fromList deck
             )
 
 
-newGame : Assets -> UserID -> GameID -> Maybe Game
-newGame { whiteCards, blackCards } userID gameID =
+newGame : List Card -> List Card -> UserID -> GameID -> Maybe Game
+newGame whiteCards blackCards userID gameID =
     case ( drawHand whiteCards, blackCards ) of
-        ( ( hand, Just whiteDeck ), Nonempty firstBlackCard (nextBlackCard :: blackDeck) ) ->
+        ( ( hand, Just whiteDeck ), firstBlackCard :: (nextBlackCard :: blackDeck) ) ->
             Just
                 { gameID = gameID
                 , players = Dict.singleton userID { playerID = userID, hand = hand }
@@ -742,20 +781,9 @@ roundDecoder =
         (D.field "blackCard" Cards.decode)
 
 
-shuffleCards : Nonempty Card -> (Nonempty Card -> Msg) -> Cmd Msg
-shuffleCards cards handler =
-    Nonempty.toList cards
-        |> Random.List.shuffle
-        |> Random.generate identity
-        |> Cmd.map
-            (\cardList ->
-                case cardList of
-                    x :: xs ->
-                        handler (Nonempty x xs)
-
-                    _ ->
-                        EpicFailure "not enough cards"
-            )
+shuffleCards : List Card -> Random.Generator (List Card)
+shuffleCards cards =
+    cards |> Random.List.shuffle
 
 
 addCardToHand : Card -> Player -> Player
